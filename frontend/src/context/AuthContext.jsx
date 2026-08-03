@@ -4,70 +4,90 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react'
 
 import { api, setTokenGetter } from '../lib/api'
 import {
+  getAccessToken,
   requestPasswordReset,
+  resendConfirmationEmail,
   signInWithEmail,
   signInWithGoogle,
   signOutSupabase,
   signUpWithEmail,
   supabase,
   supabaseConfigured,
+  urlHasAuthPayload,
+  waitForSession,
 } from '../lib/supabase'
 
 const AuthContext = createContext(null)
-const DEV_TOKEN_KEY = 'stockache.devToken'
+
+// One-time cleanup. An earlier build let the browser hold a local test token
+// and handed it to the API *in preference to* the real Supabase session. Once
+// the seeded account behind it was replaced, every request 401'd while the user
+// appeared to be signed in. Nothing writes this key any more; purge leftovers
+// so affected browsers heal themselves on next load.
+try {
+  window.localStorage.removeItem('stockache.devToken')
+} catch {
+  /* private mode / storage disabled -- nothing to clean up */
+}
+
+const BACKEND_UNREACHABLE =
+  'Signed in with Supabase, but the StockAche server did not accept the session. ' +
+  'Check that the Django backend is running on port 8000.'
 
 export function AuthProvider({ children }) {
   const [account, setAccount] = useState(null)
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState(null)
 
-  // Kept in a ref as well so the token getter can read it synchronously
-  // without being re-created on every change.
-  const devTokenRef = useRef(localStorage.getItem(DEV_TOKEN_KEY))
-  const [devToken, setDevToken] = useState(devTokenRef.current)
-
-  // Wire the API client to whichever session we currently hold.
+  // The Supabase session is the single source of truth for the API token.
   useEffect(() => {
-    setTokenGetter(async () => {
-      if (devTokenRef.current) return devTokenRef.current
-      if (!supabase) return null
-      const { data } = await supabase.auth.getSession()
-      return data?.session?.access_token ?? null
-    })
+    setTokenGetter(getAccessToken)
   }, [])
 
-  const refresh = useCallback(async () => {
+  /**
+   * Pull the account from our own API.
+   *
+   * A 401 legitimately means "not signed in" and resolves to null. Anything
+   * else -- the backend being down, a 500 -- is a real failure and must not be
+   * mistaken for a signed-out user, because callers use the return value to
+   * decide whether to report success.
+   */
+  const refresh = useCallback(async ({ silent = false } = {}) => {
     try {
       const data = await api.me()
       setAccount(data)
       setAuthError(null)
       return data
     } catch (err) {
-      // 401 just means "not signed in" -- not an error worth surfacing.
-      if (err.status !== 401) setAuthError(err)
       setAccount(null)
+      if (err.status === 401) {
+        setAuthError(null)
+        return null
+      }
+      setAuthError(err)
+      if (!silent) throw err
       return null
     }
   }, [])
 
   const hasSession = useCallback(async () => {
-    if (devTokenRef.current) return true
     if (!supabase) return false
-    const { data } = await supabase.auth.getSession()
-    return Boolean(data?.session)
+    // Landing on a callback URL means the client is still turning the fragment
+    // into a session; asking getSession() now would race it.
+    if (urlHasAuthPayload()) return Boolean(await waitForSession())
+    return Boolean(await getAccessToken())
   }, [])
 
   // Bootstrap: restore an existing session on first paint.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      if (await hasSession()) await refresh()
+      if (await hasSession()) await refresh({ silent: true })
       if (!cancelled) setLoading(false)
     })()
     return () => {
@@ -75,19 +95,23 @@ export function AuthProvider({ children }) {
     }
   }, [hasSession, refresh])
 
-  // React to Google sign-in / sign-out happening in the Supabase client.
+  // Track sign-in / sign-out happening inside the Supabase client.
   useEffect(() => {
     if (!supabase) return undefined
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event) => {
-      if (devTokenRef.current) return
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        setLoading(true)
-        await refresh()
-        setLoading(false)
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        setAccount(null)
+        return
       }
-      if (event === 'SIGNED_OUT') setAccount(null)
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        // Deferred out of the callback so no Supabase call runs while the
+        // client is still dispatching this event.
+        setTimeout(() => {
+          refresh({ silent: true })
+        }, 0)
+      }
     })
     return () => subscription.unsubscribe()
   }, [refresh])
@@ -97,24 +121,32 @@ export function AuthProvider({ children }) {
     await signInWithGoogle()
   }, [])
 
+  /** Establish the local account, failing loudly rather than half-succeeding. */
+  const syncAfterSignIn = useCallback(async () => {
+    const acct = await refresh()
+    if (!acct) throw new Error(BACKEND_UNREACHABLE)
+    return acct
+  }, [refresh])
+
   const loginWithPassword = useCallback(
     async (email, password) => {
       setAuthError(null)
       await signInWithEmail(email, password)
-      return refresh()
+      return syncAfterSignIn()
     },
-    [refresh],
+    [syncAfterSignIn],
   )
 
   const signUpWithPassword = useCallback(
     async (email, password, fullName) => {
       setAuthError(null)
       const result = await signUpWithEmail(email, password, fullName)
-      // No session yet means Supabase is waiting on email confirmation.
-      if (!result.needsConfirmation) await refresh()
+      // No session yet means Supabase is waiting on email confirmation; there
+      // is nothing to sync and the caller shows the confirmation screen.
+      if (!result.needsConfirmation) await syncAfterSignIn()
       return result
     },
-    [refresh],
+    [syncAfterSignIn],
   )
 
   const sendPasswordReset = useCallback(async (email) => {
@@ -122,29 +154,15 @@ export function AuthProvider({ children }) {
     await requestPasswordReset(email)
   }, [])
 
-  /** Prototype-only shortcut into a seeded demo account. */
-  const loginAsDemo = useCallback(
-    async (email) => {
-      setLoading(true)
-      try {
-        const { access_token } = await api.devLogin(email)
-        localStorage.setItem(DEV_TOKEN_KEY, access_token)
-        devTokenRef.current = access_token
-        setDevToken(access_token)
-        return await refresh()
-      } finally {
-        setLoading(false)
-      }
-    },
-    [refresh],
-  )
+  const resendConfirmation = useCallback(async (email) => {
+    setAuthError(null)
+    await resendConfirmationEmail(email)
+  }, [])
 
   const logout = useCallback(async () => {
-    localStorage.removeItem(DEV_TOKEN_KEY)
-    devTokenRef.current = null
-    setDevToken(null)
     await signOutSupabase()
     setAccount(null)
+    setAuthError(null)
   }, [])
 
   const setRole = useCallback(
@@ -161,7 +179,6 @@ export function AuthProvider({ children }) {
       loading,
       authError,
       isAuthenticated: Boolean(account),
-      isDemoSession: Boolean(devToken),
       googleEnabled: supabaseConfigured,
       role: account?.role || null,
       buyerProfile: account?.buyer_profile || null,
@@ -178,7 +195,7 @@ export function AuthProvider({ children }) {
       loginWithPassword,
       signUpWithPassword,
       sendPasswordReset,
-      loginAsDemo,
+      resendConfirmation,
       logout,
       setRole,
       refresh,
@@ -187,12 +204,11 @@ export function AuthProvider({ children }) {
       account,
       loading,
       authError,
-      devToken,
       loginWithGoogle,
       loginWithPassword,
       signUpWithPassword,
       sendPasswordReset,
-      loginAsDemo,
+      resendConfirmation,
       logout,
       setRole,
       refresh,

@@ -96,8 +96,6 @@ export const api = {
   // --- auth / profile ---
   me: () => request('/auth/me/'),
   selectRole: (role) => request('/auth/role/', { method: 'POST', body: { role } }),
-  devLogin: (email) =>
-    request('/auth/dev-login/', { method: 'POST', body: { email }, auth: false }),
 
   getBuyerProfile: () => request('/profiles/buyer/'),
   saveBuyerProfile: (data) => request('/profiles/buyer/', { method: 'PUT', body: data }),
