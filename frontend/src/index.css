@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    /* Keeps upscaled pixel art crisp instead of blurry. */
+    image-rendering: pixelated;
+  }
+
+  body {
+    @apply bg-paper text-ink font-body antialiased;
+    background-image:
+      linear-gradient(rgba(21, 21, 39, 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(21, 21, 39, 0.045) 1px, transparent 1px);
+    background-size: 24px 24px;
+    min-height: 100vh;
+  }
+
+  /* Chunky scrollbar to match the theme. */
+  ::-webkit-scrollbar {
+    width: 14px;
+    height: 14px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-parchment;
+    border-left: 3px solid #151527;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-retro-navy;
+    border: 3px solid #151527;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-retro-blue;
+  }
+
+  ::selection {
+    @apply bg-retro-yellow text-ink;
+  }
+
+  :focus-visible {
+    outline: 3px solid #0099db;
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* --- The core "pixel panel" primitive everything else builds on --- */
+  .pixel-box {
+    @apply border-[3px] border-ink bg-paper shadow-pixel;
+  }
+
+  .pixel-box-lg {
+    @apply border-4 border-ink bg-paper shadow-pixel-lg;
+  }
+
+  /* Buttons physically depress into their own shadow on click. */
+  .pixel-btn {
+    @apply inline-flex items-center justify-center gap-2 border-[3px] border-ink
+           font-pixel text-[10px] uppercase leading-none tracking-wider
+           px-4 py-3 shadow-pixel transition-transform duration-75
+           active:translate-x-[4px] active:translate-y-[4px] active:shadow-none
+           disabled:opacity-50 disabled:cursor-not-allowed
+           disabled:active:translate-x-0 disabled:active:translate-y-0
+           disabled:active:shadow-pixel;
+  }
+
+  .pixel-input {
+    @apply w-full border-[3px] border-ink bg-white px-3 py-2.5 font-body text-sm
+           text-ink shadow-pixel-inset placeholder:text-retro-grey
+           focus:outline-none focus:ring-0 focus:border-retro-blue;
+  }
+
+  .pixel-label {
+    @apply block font-pixel text-[9px] uppercase tracking-wider text-slate mb-2;
+  }
+
+  .pixel-tag {
+    @apply inline-flex items-center gap-1 border-2 border-ink px-2 py-1
+           font-pixel text-[8px] uppercase leading-none tracking-wide;
+  }
+
+  /* Diagonal hazard stripes used for warnings / empty states. */
+  .hazard {
+    background-image: repeating-linear-gradient(
+      45deg,
+      #feae34 0 10px,
+      #151527 10px 20px
+    );
+  }
+
+  .scanlines::after {
+    content: '';
+    @apply pointer-events-none absolute inset-0;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.14) 0 1px,
+      transparent 1px 3px
+    );
+  }
+}
+
+@layer utilities {
+  .text-shadow-pixel {
+    text-shadow: 3px 3px 0 #151527;
+  }
+  .text-shadow-pixel-sm {
+    text-shadow: 2px 2px 0 #151527;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
