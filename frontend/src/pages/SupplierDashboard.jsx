@@ -11,7 +11,7 @@ const VERIFICATION_COPY = {
   unsubmitted: {
     tone: 'bg-retro-yellow',
     title: 'Get verified',
-    body: 'Add your trade licence number to your profile to earn the Verified Supplier badge. Buyers can filter for verified sellers only.',
+    body: 'Add your trade licence to your profile to earn the Verified Supplier badge. Buyers can filter the marketplace to verified sellers only.',
     cta: 'Complete Profile',
   },
   pending: {
@@ -35,13 +35,20 @@ export default function SupplierDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
+  const [earnings, setEarnings] = useState(null)
+
   useEffect(() => {
     let cancelled = false
-    Promise.all([api.supplierDashboard(), api.incomingOrders()])
-      .then(([dashboard, orderList]) => {
+    Promise.all([
+      api.supplierDashboard(),
+      api.incomingOrders(),
+      api.supplierEarnings(),
+    ])
+      .then(([dashboard, orderList, statement]) => {
         if (cancelled) return
         setStats(dashboard)
         setOrders(orderList.slice(0, 5))
+        setEarnings(statement)
         setError(null)
       })
       .catch((err) => !cancelled && setError(err))
@@ -59,7 +66,7 @@ export default function SupplierDashboard() {
     <div className="mx-auto max-w-7xl px-4 py-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-pixel text-lg uppercase">
+          <h1 className="h-page">
             <span className="text-retro-red">▸ </span>Supplier Dashboard
           </h1>
           <p className="mt-2 text-sm text-slate/80">
@@ -78,7 +85,7 @@ export default function SupplierDashboard() {
         <div className={`mt-6 border-[3px] border-ink p-5 shadow-pixel ${verification.tone}`}>
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <p className="font-pixel text-[10px] uppercase tracking-wider">
+              <p className="h-card">
                 {verification.title}
               </p>
               <p className="mt-2 max-w-2xl text-sm">{verification.body}</p>
@@ -114,11 +121,92 @@ export default function SupplierDashboard() {
               color="bg-retro-purple"
             />
             <Stat
-              label="Revenue"
-              value={bdt(stats.revenue_bdt)}
-              sub="Paid orders"
+              label="Net Earnings"
+              value={bdt(stats.net_payout_bdt)}
+              sub={`After ${(Number(stats.commission_rate) * 100).toFixed(0)}% platform fee`}
               color="bg-retro-green"
             />
+          </div>
+
+          {stats.open_cancellation_requests > 0 && (
+            <Link to="/supplier/orders" className="mt-6 block">
+              <div className="border-[3px] border-ink bg-retro-yellow p-4 shadow-pixel transition-transform hover:-translate-y-0.5">
+                <p className="h-card">
+                  {stats.open_cancellation_requests} cancellation request
+                  {stats.open_cancellation_requests > 1 ? 's' : ''} waiting
+                </p>
+                <p className="mt-2 text-base">
+                  Buyers are waiting on your decision — review them now →
+                </p>
+              </div>
+            </Link>
+          )}
+
+          {/* Earnings statement */}
+          <div className="mt-8">
+            <SectionTitle>Earnings</SectionTitle>
+            <Card>
+              <div className="grid gap-5 sm:grid-cols-3">
+                <div>
+                  <p className="eyebrow text-slate">Gross Sales</p>
+                  <p className="price mt-1.5 text-2xl">{bdt(stats.revenue_bdt)}</p>
+                </div>
+                <div>
+                  <p className="eyebrow text-slate">
+                    Platform Fee ({(Number(stats.commission_rate) * 100).toFixed(0)}%)
+                  </p>
+                  <p className="price mt-1.5 text-2xl text-slate">
+                    −{bdt(stats.commission_bdt)}
+                  </p>
+                </div>
+                <div>
+                  <p className="eyebrow text-slate">Net Payout</p>
+                  <p className="price mt-1.5 text-2xl text-retro-green">
+                    {bdt(stats.net_payout_bdt)}
+                  </p>
+                </div>
+              </div>
+
+              <p className="mt-4 border-2 border-ink bg-parchment p-3 text-sm text-slate/80">
+                The platform fee is charged on the goods value only. Delivery and express
+                charges pass through to you in full.
+              </p>
+
+              {earnings?.months?.length > 0 && (
+                <div className="mt-5 overflow-x-auto">
+                  <table className="w-full min-w-[34rem] border-collapse text-left">
+                    <thead>
+                      <tr className="border-b-[3px] border-ink">
+                        <th className="pb-2 pr-4 eyebrow text-slate">Month</th>
+                        <th className="pb-2 pr-4 eyebrow text-right text-slate">Orders</th>
+                        <th className="pb-2 pr-4 eyebrow text-right text-slate">Gross</th>
+                        <th className="pb-2 pr-4 eyebrow text-right text-slate">Fee</th>
+                        <th className="pb-2 eyebrow text-right text-slate">Net</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {earnings.months.map((month) => (
+                        <tr key={month.month} className="border-b-2 border-dashed border-ink/25">
+                          <td className="py-3 pr-4 text-sm font-semibold">{month.label}</td>
+                          <td className="py-3 pr-4 text-right font-num text-sm">
+                            {month.orders}
+                          </td>
+                          <td className="py-3 pr-4 text-right font-num text-sm">
+                            {bdt(month.gross_bdt)}
+                          </td>
+                          <td className="py-3 pr-4 text-right font-num text-sm text-slate/70">
+                            −{bdt(month.commission_bdt)}
+                          </td>
+                          <td className="py-3 text-right font-num text-sm font-bold text-retro-green">
+                            {bdt(month.net_payout_bdt)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
           </div>
 
           <div className="mt-8 grid gap-6 lg:grid-cols-[1.3fr_1fr]">
@@ -164,7 +252,7 @@ export default function SupplierDashboard() {
                         </p>
                       </div>
                       <div className="shrink-0 text-right">
-                        <p className="font-term text-xl leading-none">
+                        <p className="price text-xl">
                           {bdt(order.total_price)}
                         </p>
                         <Tag color={statusColor(order.order_status)} className="mt-1">
@@ -215,7 +303,7 @@ export default function SupplierDashboard() {
                           >
                             {product.title}
                           </Link>
-                          <span className="shrink-0 font-term text-lg">
+                          <span className="shrink-0 price text-lg">
                             {product.available_quantity}
                           </span>
                         </div>
@@ -226,7 +314,7 @@ export default function SupplierDashboard() {
                           />
                         </div>
                         {critical && (
-                          <p className="mt-1 font-pixel text-[7px] uppercase text-retro-red">
+                          <p className="mt-1 eyebrow text-retro-red">
                             Low stock — under 2× MOQ
                           </p>
                         )}

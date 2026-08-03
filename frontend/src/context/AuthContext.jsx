@@ -9,7 +9,15 @@ import {
 } from 'react'
 
 import { api, setTokenGetter } from '../lib/api'
-import { signInWithGoogle, signOutSupabase, supabase, supabaseConfigured } from '../lib/supabase'
+import {
+  requestPasswordReset,
+  signInWithEmail,
+  signInWithGoogle,
+  signOutSupabase,
+  signUpWithEmail,
+  supabase,
+  supabaseConfigured,
+} from '../lib/supabase'
 
 const AuthContext = createContext(null)
 const DEV_TOKEN_KEY = 'stockache.devToken'
@@ -89,6 +97,31 @@ export function AuthProvider({ children }) {
     await signInWithGoogle()
   }, [])
 
+  const loginWithPassword = useCallback(
+    async (email, password) => {
+      setAuthError(null)
+      await signInWithEmail(email, password)
+      return refresh()
+    },
+    [refresh],
+  )
+
+  const signUpWithPassword = useCallback(
+    async (email, password, fullName) => {
+      setAuthError(null)
+      const result = await signUpWithEmail(email, password, fullName)
+      // No session yet means Supabase is waiting on email confirmation.
+      if (!result.needsConfirmation) await refresh()
+      return result
+    },
+    [refresh],
+  )
+
+  const sendPasswordReset = useCallback(async (email) => {
+    setAuthError(null)
+    await requestPasswordReset(email)
+  }, [])
+
   /** Prototype-only shortcut into a seeded demo account. */
   const loginAsDemo = useCallback(
     async (email) => {
@@ -142,12 +175,28 @@ export function AuthProvider({ children }) {
             : false,
       ),
       loginWithGoogle,
+      loginWithPassword,
+      signUpWithPassword,
+      sendPasswordReset,
       loginAsDemo,
       logout,
       setRole,
       refresh,
     }),
-    [account, loading, authError, devToken, loginWithGoogle, loginAsDemo, logout, setRole, refresh],
+    [
+      account,
+      loading,
+      authError,
+      devToken,
+      loginWithGoogle,
+      loginWithPassword,
+      signUpWithPassword,
+      sendPasswordReset,
+      loginAsDemo,
+      logout,
+      setRole,
+      refresh,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

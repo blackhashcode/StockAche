@@ -9,6 +9,7 @@ import uuid
 from datetime import timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
@@ -16,6 +17,8 @@ from django.utils import timezone
 from core.models import (
     Account,
     BuyerProfile,
+    CancellationRequest,
+    DeliverySpeed,
     FabricCategory,
     Order,
     OrderEvent,
@@ -37,6 +40,7 @@ SUPPLIERS = [
         "address": "Plot 42, BSCIC Industrial Area, Fatullah, Narayanganj",
         "phone": "+8801711000101",
         "license": "TRAD/NGJ/2019/44821",
+        "nid": "1985347765521",
         "about": "Export-surplus knitwear from Narayanganj units. 9 years in stocklot.",
         "verified": True,
     },
@@ -48,6 +52,7 @@ SUPPLIERS = [
         "address": "House 7, Konabari, Gazipur",
         "phone": "+8801711000102",
         "license": "TRAD/GAZ/2021/11903",
+        "nid": "1990558812234",
         "about": "Denim and twill leftovers direct from washing plants.",
         "verified": True,
     },
@@ -59,6 +64,7 @@ SUPPLIERS = [
         "address": "Road 3, Baizid Bostami, Chattogram",
         "phone": "+8801711000103",
         "license": "",
+        "nid": "1993220098876",
         "about": "Port-side depot. Mixed lots, fast dispatch to anywhere in BD.",
         "verified": False,
     },
@@ -73,7 +79,7 @@ BUYERS = [
         "district": "Dhaka",
         "address": "Flat 4B, House 22, Road 11, Banani, Dhaka 1213",
         "phone": "+8801811000201",
-        "nid": "1994****5521",
+        "nid": "1994778865521",
     },
     {
         "email": "shopno@stockache.dev",
@@ -83,7 +89,7 @@ BUYERS = [
         "district": "Sylhet",
         "address": "Zindabazar, Sylhet 3100",
         "phone": "+8801811000202",
-        "nid": "1998****3310",
+        "nid": "1998443323310",
     },
 ]
 
@@ -244,6 +250,27 @@ def images_for(index: int) -> list[str]:
     ]
 
 
+def document_for(slug: str) -> str:
+    """Stand-in scan of an identity document for demo accounts."""
+    return f"https://picsum.photos/seed/stockache-doc-{slug}/900/560"
+
+
+# Per-listing delivery options, indexed to PRODUCTS below.
+#   (free_delivery, express_available, express_fee, express_hours)
+DELIVERY_OPTIONS = [
+    (False, True, "850.00", 24),
+    (False, True, "1200.00", 24),
+    (True, False, "0.00", 24),
+    (False, False, "0.00", 24),
+    (True, True, "700.00", 18),
+    (False, True, "950.00", 24),
+    (False, False, "0.00", 24),
+    (True, True, "600.00", 12),
+    (False, True, "1100.00", 24),
+    (False, False, "0.00", 24),
+]
+
+
 class Command(BaseCommand):
     help = "Seed the StockAche prototype with demo suppliers, buyers, lots and orders."
 
@@ -259,6 +286,7 @@ class Command(BaseCommand):
         random.seed(42)
 
         if options["reset"]:
+            CancellationRequest.objects.all().delete()
             OrderEvent.objects.all().delete()
             Order.objects.all().delete()
             Product.objects.all().delete()
@@ -289,6 +317,12 @@ class Command(BaseCommand):
                     "address": spec["address"],
                     "district": spec["district"],
                     "trade_license_number": spec["license"],
+                    "trade_license_document_url": (
+                        document_for(f"tl-{spec['email']}") if spec["license"] else ""
+                    ),
+                    "nid_number": spec["nid"],
+                    "nid_document_url": document_for(f"nid-f-{spec['email']}"),
+                    "nid_back_url": document_for(f"nid-b-{spec['email']}"),
                     "about": spec["about"],
                     "verification_status": (
                         VerificationStatus.VERIFIED
@@ -322,6 +356,8 @@ class Command(BaseCommand):
                     "address": spec["address"],
                     "district": spec["district"],
                     "nid_number": spec["nid"],
+                    "nid_document_url": document_for(f"nid-f-{spec['email']}"),
+                    "nid_back_url": document_for(f"nid-b-{spec['email']}"),
                     "verification_status": VerificationStatus.VERIFIED,
                 },
             )
@@ -329,6 +365,7 @@ class Command(BaseCommand):
 
         products = []
         for index, spec in enumerate(PRODUCTS):
+            free, express, express_fee, express_hours = DELIVERY_OPTIONS[index]
             product, created = Product.objects.get_or_create(
                 title=spec["title"],
                 supplier=supplier_profiles[spec["supplier"]],
@@ -342,7 +379,12 @@ class Command(BaseCommand):
                     "available_quantity": spec["qty"],
                     "moq": spec["moq"],
                     "unit_price_bdt": Decimal(spec["price"]),
+                    # `free_delivery` zeroes this out in Product.save().
                     "estimated_transport_cost": Decimal(spec["transport"]),
+                    "free_delivery": free,
+                    "express_delivery_available": express,
+                    "express_delivery_fee": Decimal(express_fee),
+                    "express_delivery_hours": express_hours,
                     "images": images_for(index),
                     "location": supplier_profiles[spec["supplier"]].district,
                 },
@@ -351,30 +393,49 @@ class Command(BaseCommand):
 
         # A few orders spread across the milestone track so the tracker and the
         # supplier dispatch controller both have something to show.
+        # (buyer, product, qty, payment method, final status, rating, express)
         order_specs = [
-            (0, 0, 200, PaymentMethod.BKASH, OrderStatus.DELIVERED, 5),
-            (0, 1, 80, PaymentMethod.COD, OrderStatus.IN_TRANSIT, None),
-            (0, 3, 150, PaymentMethod.CARD, OrderStatus.DISPATCHED, None),
-            (1, 2, 60, PaymentMethod.BKASH, OrderStatus.CONFIRMED, None),
-            (1, 5, 100, PaymentMethod.COD, OrderStatus.PLACED, None),
-            (0, 7, 300, PaymentMethod.BKASH, OrderStatus.DELIVERED, 4),
+            (0, 0, 200, PaymentMethod.BKASH, OrderStatus.DELIVERED, 5, True),
+            (0, 1, 80, PaymentMethod.COD, OrderStatus.IN_TRANSIT, None, False),
+            (0, 3, 150, PaymentMethod.CARD, OrderStatus.DISPATCHED, None, False),
+            (1, 2, 60, PaymentMethod.BKASH, OrderStatus.CONFIRMED, None, False),
+            (1, 5, 100, PaymentMethod.COD, OrderStatus.PLACED, None, False),
+            (0, 7, 300, PaymentMethod.BKASH, OrderStatus.DELIVERED, 4, True),
         ]
 
+        rate = Decimal(settings.PLATFORM_COMMISSION_RATE)
         created_orders = 0
-        for buyer_i, product_i, qty, method, final_status, rating in order_specs:
+        for buyer_i, product_i, qty, method, final_status, rating, want_express in order_specs:
             buyer = buyer_profiles[buyer_i]
             product = products[product_i]
             if Order.objects.filter(buyer=buyer, product=product).exists():
                 continue
 
-            subtotal = product.unit_price_bdt * qty
+            express = want_express and product.express_delivery_available
+            subtotal = (product.unit_price_bdt * qty).quantize(Decimal("0.01"))
+            transport = product.estimated_transport_cost
+            express_fee = product.express_delivery_fee if express else Decimal("0.00")
+            commission = (subtotal * rate).quantize(Decimal("0.01"))
+
             order = Order.objects.create(
                 buyer=buyer,
                 product=product,
                 ordered_quantity=qty,
                 unit_price_bdt=product.unit_price_bdt,
-                transport_cost=product.estimated_transport_cost,
-                total_price=subtotal + product.estimated_transport_cost,
+                transport_cost=transport,
+                delivery_speed=(
+                    DeliverySpeed.EXPRESS if express else DeliverySpeed.STANDARD
+                ),
+                express_fee=express_fee,
+                promised_delivery_at=(
+                    timezone.now() + timedelta(hours=product.express_delivery_hours)
+                    if express
+                    else None
+                ),
+                total_price=subtotal + transport + express_fee,
+                commission_rate=rate,
+                platform_commission=commission,
+                supplier_payout=(subtotal - commission + transport + express_fee),
                 payment_method=method,
                 payment_status=(
                     PaymentStatus.PAID

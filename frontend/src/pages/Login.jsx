@@ -1,46 +1,49 @@
 import { useEffect, useState } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 
-import { Button, Card, ErrorBanner, Loader } from '../components/ui'
+import { Button, Card, ErrorBanner, Field, Input, Loader, cx } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
-import { useMeta } from '../hooks/useMeta'
 
-const DEMO_ACCOUNTS = [
-  {
-    email: 'buyer@stockache.dev',
-    name: 'Trendy Threads BD',
-    role: 'Buyer',
-    note: 'Banani, Dhaka — online clothing store',
-    color: 'bg-retro-green',
+const MODES = {
+  signin: {
+    heading: 'Sign In',
+    blurb: 'Welcome back. Pick up where you left off.',
+    submit: 'Sign In',
+    swapCopy: 'New to StockAche?',
+    swapCta: 'Create an account',
   },
-  {
-    email: 'supplier@stockache.dev',
-    name: 'Hossain Stocklot House',
-    role: 'Supplier',
-    note: 'Narayanganj — verified, 4 active lots',
-    color: 'bg-retro-purple',
+  signup: {
+    heading: 'Create Account',
+    blurb: 'One account works for both sides — you choose buyer or supplier next.',
+    submit: 'Create Account',
+    swapCopy: 'Already have an account?',
+    swapCta: 'Sign in instead',
   },
-  {
-    email: 'ctgfabrics@stockache.dev',
-    name: 'Chattogram Fabric Depot',
-    role: 'Supplier',
-    note: 'Chattogram — pending verification',
-    color: 'bg-retro-orange',
-  },
-]
+}
 
 export default function Login() {
-  const { loginWithGoogle, loginAsDemo, isAuthenticated, isOnboarded, googleEnabled, loading } =
-    useAuth()
-  const { meta } = useMeta()
+  const {
+    loginWithGoogle,
+    loginWithPassword,
+    signUpWithPassword,
+    sendPasswordReset,
+    isAuthenticated,
+    isOnboarded,
+    googleEnabled,
+    loading,
+  } = useAuth()
+
+  const [mode, setMode] = useState('signin')
+  const [form, setForm] = useState({ email: '', password: '', confirm: '', fullName: '' })
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(null)
+  const [notice, setNotice] = useState(null)
   const navigate = useNavigate()
   const location = useLocation()
   const toast = useToast()
 
-  // Surface the reason Supabase bounced us back, if it did.
+  // Supabase reports OAuth failures back on the URL fragment.
   useEffect(() => {
     const params = new URLSearchParams(window.location.hash.replace(/^#/, ''))
     const description = params.get('error_description')
@@ -54,6 +57,15 @@ export default function Login() {
     return <Navigate to={target} replace />
   }
 
+  const copy = MODES[mode]
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
+
+  const swapMode = () => {
+    setMode((m) => (m === 'signin' ? 'signup' : 'signin'))
+    setError(null)
+    setNotice(null)
+  }
+
   const handleGoogle = async () => {
     setError(null)
     setBusy('google')
@@ -65,13 +77,60 @@ export default function Login() {
     }
   }
 
-  const handleDemo = async (email) => {
+  const handleSubmit = async (e) => {
+    e.preventDefault()
     setError(null)
-    setBusy(email)
+    setNotice(null)
+
+    if (mode === 'signup') {
+      if (form.password.length < 8) {
+        setError({ message: 'Choose a password of at least 8 characters.' })
+        return
+      }
+      if (form.password !== form.confirm) {
+        setError({ message: 'The two passwords do not match.' })
+        return
+      }
+    }
+
+    setBusy('email')
     try {
-      const account = await loginAsDemo(email)
-      toast.success(`Signed in as ${account?.full_name || email}`)
-      navigate(account?.role === 'supplier' ? '/supplier' : '/marketplace', { replace: true })
+      if (mode === 'signup') {
+        const { needsConfirmation } = await signUpWithPassword(
+          form.email,
+          form.password,
+          form.fullName,
+        )
+        if (needsConfirmation) {
+          setNotice(
+            `We sent a confirmation link to ${form.email}. Click it, then sign in.`,
+          )
+          setMode('signin')
+          return
+        }
+        toast.success('Account created.')
+      } else {
+        await loginWithPassword(form.email, form.password)
+        toast.success('Signed in.')
+      }
+      navigate(location.state?.from || '/onboarding', { replace: true })
+    } catch (err) {
+      setError(err)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const handleReset = async () => {
+    if (!form.email) {
+      setError({ message: 'Enter your email address first, then request a reset.' })
+      return
+    }
+    setError(null)
+    setBusy('reset')
+    try {
+      await sendPasswordReset(form.email)
+      setNotice(`Password reset link sent to ${form.email}.`)
     } catch (err) {
       setError(err)
     } finally {
@@ -80,104 +139,166 @@ export default function Login() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-12">
+    <div className="mx-auto max-w-xl px-4 py-14">
       <div className="mb-8 text-center">
-        <h1 className="font-pixel text-xl uppercase">Sign In</h1>
-        <p className="mt-3 text-sm text-slate/80">
-          One account works for both sides — you pick buyer or supplier next.
-        </p>
+        <h1 className="h-page">{copy.heading}</h1>
+        <p className="mx-auto mt-4 max-w-md text-base text-slate/85">{copy.blurb}</p>
       </div>
 
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Google */}
-        <Card className="flex flex-col">
-          <span className="pixel-tag bg-retro-blue text-paper">Recommended</span>
-          <h2 className="mt-4 font-pixel text-xs uppercase leading-relaxed">
-            Continue with Google
-          </h2>
-          <p className="mt-3 flex-1 text-sm leading-relaxed text-slate/85">
-            Uses Supabase Auth. Your name, email and photo come across automatically — no
-            password to remember.
+      {notice && (
+        <div className="mb-4 border-[3px] border-ink bg-retro-green p-4 shadow-pixel">
+          <p className="text-base">{notice}</p>
+        </div>
+      )}
+
+      <Card>
+        {/* Google first: fewest steps, and it carries a verified email. */}
+        <Button
+          variant="dark"
+          size="lg"
+          className="w-full"
+          onClick={handleGoogle}
+          loading={busy === 'google'}
+          disabled={!googleEnabled || Boolean(busy)}
+        >
+          <span className="grid h-5 w-5 place-items-center border-2 border-paper bg-paper text-sm font-bold text-ink">
+            G
+          </span>
+          Continue with Google
+        </Button>
+
+        {!googleEnabled && (
+          <p className="mt-3 border-2 border-ink bg-retro-yellow p-3 text-sm">
+            Google sign-in is unavailable — Supabase keys are missing from{' '}
+            <code className="bg-paper px-1">frontend/.env</code>. Use email and password
+            below.
           </p>
+        )}
+
+        <div className="my-6 flex items-center gap-3">
+          <span className="h-1 flex-1 border-y-2 border-ink/25" />
+          <span className="eyebrow text-slate/70">or use email</span>
+          <span className="h-1 flex-1 border-y-2 border-ink/25" />
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {mode === 'signup' && (
+            <Field label="Full Name" required>
+              <Input
+                value={form.fullName}
+                onChange={set('fullName')}
+                placeholder="e.g. Tanvir Ahmed"
+                autoComplete="name"
+                required
+              />
+            </Field>
+          )}
+
+          <Field label="Email Address" required>
+            <Input
+              type="email"
+              value={form.email}
+              onChange={set('email')}
+              placeholder="you@business.com"
+              autoComplete="email"
+              required
+            />
+          </Field>
+
+          <Field
+            label="Password"
+            required
+            hint={mode === 'signup' ? 'At least 8 characters.' : undefined}
+          >
+            <Input
+              type="password"
+              value={form.password}
+              onChange={set('password')}
+              placeholder="••••••••"
+              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+              minLength={mode === 'signup' ? 8 : undefined}
+              required
+            />
+          </Field>
+
+          {mode === 'signup' && (
+            <Field label="Confirm Password" required>
+              <Input
+                type="password"
+                value={form.confirm}
+                onChange={set('confirm')}
+                placeholder="••••••••"
+                autoComplete="new-password"
+                required
+              />
+            </Field>
+          )}
 
           <Button
-            variant="dark"
+            type="submit"
             size="lg"
-            className="mt-6 w-full"
-            onClick={handleGoogle}
-            loading={busy === 'google'}
-            disabled={!googleEnabled}
+            className="w-full"
+            loading={busy === 'email'}
+            disabled={Boolean(busy)}
           >
-            <span className="grid h-5 w-5 place-items-center border-2 border-paper bg-paper text-ink">
-              G
-            </span>
-            Sign in with Google
+            {copy.submit}
           </Button>
+        </form>
 
-          {!googleEnabled && (
-            <p className="mt-3 border-2 border-ink bg-retro-yellow p-2 text-xs">
-              Supabase keys are missing from <code>frontend/.env</code>. Use a demo account
-              below instead.
-            </p>
-          )}
-        </Card>
+        {mode === 'signin' && (
+          <button
+            type="button"
+            onClick={handleReset}
+            disabled={Boolean(busy)}
+            className="mt-4 w-full text-sm text-slate/75 underline underline-offset-4 hover:text-retro-red"
+          >
+            {busy === 'reset' ? 'Sending reset link…' : 'Forgot your password?'}
+          </button>
+        )}
+      </Card>
 
-        {/* Demo switcher */}
-        <Card className="flex flex-col border-t-8 border-t-retro-purple">
-          <span className="pixel-tag bg-retro-purple text-paper">Prototype</span>
-          <h2 className="mt-4 font-pixel text-xs uppercase leading-relaxed">
-            Demo Accounts
-          </h2>
-          <p className="mt-3 text-sm leading-relaxed text-slate/85">
-            Jump straight into seeded data — useful for judging without configuring OAuth.
-          </p>
-
-          <div className="mt-5 flex flex-col gap-3">
-            {DEMO_ACCOUNTS.map((account) => (
-              <button
-                key={account.email}
-                onClick={() => handleDemo(account.email)}
-                disabled={Boolean(busy) || !meta.dev_login_enabled}
-                className="flex items-center gap-3 border-[3px] border-ink bg-paper p-3 text-left shadow-pixel-sm transition-transform duration-75 hover:bg-parchment active:translate-x-[2px] active:translate-y-[2px] active:shadow-none disabled:opacity-50"
-              >
-                <span
-                  className={`grid h-9 w-9 shrink-0 place-items-center border-2 border-ink font-pixel text-[10px] ${account.color}`}
-                >
-                  {account.role[0]}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-bold">{account.name}</span>
-                  <span className="block truncate text-xs text-slate/70">{account.note}</span>
-                </span>
-                <span className="pixel-tag shrink-0 bg-parchment">
-                  {busy === account.email ? '...' : account.role}
-                </span>
-              </button>
-            ))}
-          </div>
-
-          {!meta.dev_login_enabled && (
-            <p className="mt-4 border-2 border-ink bg-retro-red p-2 text-xs text-paper">
-              Demo login is disabled on the server (ENABLE_DEV_LOGIN=False).
-            </p>
-          )}
-        </Card>
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-2 text-base">
+        <span className="text-slate/75">{copy.swapCopy}</span>
+        <button
+          type="button"
+          onClick={swapMode}
+          className="font-semibold text-retro-navy underline underline-offset-4 hover:text-retro-red"
+        >
+          {copy.swapCta}
+        </button>
       </div>
 
-      <div className="mt-8 border-[3px] border-ink bg-parchment p-4">
-        <p className="font-pixel text-[9px] uppercase tracking-wider text-slate">
-          Setting up Google sign-in
-        </p>
-        <ol className="mt-3 list-inside list-decimal space-y-1 text-sm text-slate/85">
-          <li>Supabase Dashboard → Authentication → Providers → enable Google.</li>
-          <li>Paste your Google OAuth client ID and secret.</li>
-          <li>
-            Add <code className="bg-paper px-1">http://localhost:5173/auth/callback</code> to
-            the redirect URLs.
-          </li>
+      <div className="mt-8 border-[3px] border-ink bg-parchment p-5">
+        <p className="eyebrow">What happens next</p>
+        <ol className="mt-3 space-y-2 text-base text-slate/85">
+          {[
+            'Choose whether you are buying or supplying.',
+            'Add your business details and a photo of your NID card.',
+            'Buy or list stocklots once your identity is on file.',
+          ].map((step, i) => (
+            <li key={step} className="flex gap-3">
+              <span
+                className={cx(
+                  'grid h-6 w-6 shrink-0 place-items-center border-2 border-ink text-xs font-bold',
+                  'bg-retro-yellow',
+                )}
+              >
+                {i + 1}
+              </span>
+              <span>{step}</span>
+            </li>
+          ))}
         </ol>
+        <p className="mt-4 text-sm text-slate/70">
+          Identity verification keeps scams off the platform. Your NID is visible only to
+          the StockAche review team, never to other traders.{' '}
+          <Link to="/marketplace" className="underline underline-offset-2 hover:text-retro-red">
+            Browse without an account
+          </Link>
+          .
+        </p>
       </div>
     </div>
   )

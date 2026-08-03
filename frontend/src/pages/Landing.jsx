@@ -27,8 +27,29 @@ const PROBLEMS = [
 const STEPS = [
   { n: '01', title: 'Search the feed', text: 'Filter by GSM, fabric category, MOQ range and unit price.' },
   { n: '02', title: 'Check the badge', text: 'Verified suppliers have submitted a trade licence and NID.' },
-  { n: '03', title: 'Calculate the total', text: 'Quantity × unit price + transport, before you commit.' },
+  { n: '03', title: 'Calculate the total', text: 'Quantity × unit price + delivery, before you commit.' },
   { n: '04', title: 'Track to your door', text: 'Placed → Confirmed → Dispatched → In Transit → Delivered.' },
+]
+
+const HIGHLIGHTS = [
+  {
+    icon: '⚡',
+    title: 'Express Delivery',
+    text: 'Need it tomorrow? Suppliers offering express deliver within a guaranteed window for a small, clearly stated surcharge.',
+    color: 'bg-retro-orange',
+  },
+  {
+    icon: '✓',
+    title: 'Free Delivery Lots',
+    text: 'Many suppliers absorb transport entirely. Those lots are badged on the feed so you can spot them at a glance.',
+    color: 'bg-retro-green',
+  },
+  {
+    icon: '৳',
+    title: 'Pay Your Way',
+    text: 'bKash, card, or cash on delivery. Cash on delivery means you inspect the goods before any money changes hands.',
+    color: 'bg-retro-pink',
+  },
 ]
 
 export default function Landing() {
@@ -96,8 +117,8 @@ export default function Landing() {
                   ['11', 'Categories'],
                 ].map(([value, label]) => (
                   <div key={label} className="border-[3px] border-ink bg-paper p-3 shadow-pixel">
-                    <p className="font-term text-3xl leading-none text-retro-red">{value}</p>
-                    <p className="mt-1 font-pixel text-[7px] uppercase tracking-wider text-slate">
+                    <p className="price text-3xl text-retro-red">{value}</p>
+                    <p className="mt-1 eyebrow text-slate">
                       {label}
                     </p>
                   </div>
@@ -111,11 +132,12 @@ export default function Landing() {
                 <span className="h-3 w-3 border-2 border-paper bg-retro-red" />
                 <span className="h-3 w-3 border-2 border-paper bg-retro-yellow" />
                 <span className="h-3 w-3 border-2 border-paper bg-retro-green" />
-                <span className="ml-2 font-pixel text-[8px] uppercase text-paper/60">
+                <span className="ml-2 eyebrow text-paper/60">
                   stockache://order/SA-7E547715
                 </span>
               </div>
-              <div className="space-y-1 p-4 font-term text-lg leading-tight text-retro-green">
+              {/* Genuinely a terminal readout, so monospace is correct here. */}
+              <div className="space-y-1.5 p-4 font-mono text-sm leading-snug text-retro-green">
                 <p>&gt; searching lots... gsm=180 moq&lt;=150</p>
                 <p className="text-paper">&gt; 24 lots found in 0.31s</p>
                 <p>&gt; supplier: Hossain Stocklot House</p>
@@ -135,7 +157,7 @@ export default function Landing() {
 
       {/* ---------------- Problem ---------------- */}
       <section className="mx-auto max-w-7xl px-4 py-16">
-        <h2 className="text-center font-pixel text-lg uppercase leading-relaxed">
+        <h2 className="text-center h-page">
           The stocklot trade runs on <span className="text-retro-red">trust it can&apos;t verify</span>
         </h2>
         <div className="mt-10 grid gap-6 md:grid-cols-3">
@@ -144,10 +166,10 @@ export default function Landing() {
               <span className="grid h-11 w-11 place-items-center border-[3px] border-ink bg-retro-red font-pixel text-sm text-paper">
                 {problem.icon}
               </span>
-              <h3 className="mt-4 font-pixel text-[11px] uppercase leading-relaxed">
+              <h3 className="mt-4 h-card">
                 {problem.title}
               </h3>
-              <p className="mt-3 text-sm leading-relaxed text-slate/85">{problem.text}</p>
+              <p className="mt-3 text-base leading-relaxed text-slate/85">{problem.text}</p>
             </Card>
           ))}
         </div>
@@ -156,20 +178,38 @@ export default function Landing() {
       {/* ---------------- How it works ---------------- */}
       <section className="border-y-[3px] border-ink bg-parchment">
         <div className="mx-auto max-w-7xl px-4 py-16">
-          <h2 className="text-center font-pixel text-lg uppercase">How It Works</h2>
+          <h2 className="text-center h-page">How It Works</h2>
           <div className="mt-10 grid gap-6 md:grid-cols-4">
             {STEPS.map((step) => (
               <div key={step.n} className="relative border-[3px] border-ink bg-paper p-5 shadow-pixel">
-                <span className="absolute -top-4 left-4 border-[3px] border-ink bg-retro-blue px-2 py-1 font-pixel text-[10px] text-paper">
+                <span className="absolute -top-4 left-4 border-[3px] border-ink bg-retro-blue px-2 py-1 font-pixel text-pixel-xs text-paper">
                   {step.n}
                 </span>
-                <h3 className="mt-3 font-pixel text-[10px] uppercase leading-relaxed">
+                <h3 className="mt-3 h-card leading-relaxed">
                   {step.title}
                 </h3>
-                <p className="mt-3 text-sm leading-relaxed text-slate/85">{step.text}</p>
+                <p className="mt-3 text-base leading-relaxed text-slate/85">{step.text}</p>
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* ---------------- Delivery & payment ---------------- */}
+      <section className="mx-auto max-w-7xl px-4 py-16">
+        <h2 className="h-page text-center">Delivery On Your Terms</h2>
+        <div className="mt-10 grid gap-6 md:grid-cols-3">
+          {HIGHLIGHTS.map((item) => (
+            <Card key={item.title}>
+              <span
+                className={`grid h-12 w-12 place-items-center border-[3px] border-ink text-xl ${item.color}`}
+              >
+                {item.icon}
+              </span>
+              <h3 className="mt-4 h-card">{item.title}</h3>
+              <p className="mt-3 text-base leading-relaxed text-slate/85">{item.text}</p>
+            </Card>
+          ))}
         </div>
       </section>
 
@@ -177,7 +217,7 @@ export default function Landing() {
       {featured.length > 0 && (
         <section className="mx-auto max-w-7xl px-4 py-16">
           <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-            <h2 className="font-pixel text-lg uppercase">
+            <h2 className="h-page">
               <span className="text-retro-red">▸ </span>Fresh Lots
             </h2>
             <Link to="/marketplace">
@@ -199,7 +239,7 @@ export default function Landing() {
         <div className="grid gap-6 md:grid-cols-2">
           <div className="border-[3px] border-ink bg-retro-green p-8 shadow-pixel-lg">
             <span className="pixel-tag bg-paper">For Buyers</span>
-            <h3 className="mt-4 font-pixel text-sm uppercase leading-relaxed">
+            <h3 className="mt-4 h-section">
               Stock your shop in minutes
             </h3>
             <p className="mt-3 text-sm leading-relaxed">
@@ -213,7 +253,7 @@ export default function Landing() {
 
           <div className="border-[3px] border-ink bg-retro-purple p-8 text-paper shadow-pixel-lg">
             <span className="pixel-tag bg-paper text-ink">For Suppliers</span>
-            <h3 className="mt-4 font-pixel text-sm uppercase leading-relaxed">
+            <h3 className="mt-4 h-section">
               Move dead stock, faster
             </h3>
             <p className="mt-3 text-sm leading-relaxed text-paper/90">

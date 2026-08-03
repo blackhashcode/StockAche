@@ -37,46 +37,65 @@ export default function ProductCard({ product }) {
             <Tag color="bg-retro-green">✔ Verified</Tag>
           )}
         </div>
-        <div className="absolute bottom-2 right-2">
+        <div className="absolute bottom-2 right-2 flex flex-wrap justify-end gap-1">
+          {product.express_delivery_available && (
+            <Tag color="bg-retro-orange">
+              ⚡ {product.express_delivery_hours}h
+            </Tag>
+          )}
           <Tag color="bg-ink text-paper">{product.gsm} GSM</Tag>
         </div>
         {soldOut && (
           <div className="absolute inset-0 grid place-items-center bg-ink/70">
-            <span className="border-[3px] border-paper bg-retro-red px-3 py-2 font-pixel text-[10px] uppercase text-paper">
+            <span className="border-[3px] border-paper bg-retro-red px-3 py-2 h-card text-paper">
               Sold Out
             </span>
           </div>
         )}
       </div>
 
-      <div className="flex flex-1 flex-col p-3">
-        <h3 className="line-clamp-2 min-h-[2.6rem] text-sm font-bold leading-snug group-hover:text-retro-red">
+      <div className="flex flex-1 flex-col p-4">
+        <h3 className="line-clamp-2 min-h-[2.9rem] text-base font-bold leading-snug group-hover:text-retro-red">
           {product.title}
         </h3>
-        <p className="mt-1 line-clamp-1 text-xs text-slate/70">
+        <p className="mt-1.5 line-clamp-1 text-sm text-slate/75">
           {product.fabric_composition}
         </p>
 
-        <div className="mt-3 flex items-end justify-between gap-2 border-t-2 border-dashed border-ink/30 pt-3">
+        <div className="mt-4 flex items-end justify-between gap-2 border-t-2 border-dashed border-ink/30 pt-4">
           <div>
-            <p className="font-pixel text-[8px] uppercase text-slate">Unit</p>
-            <p className="font-term text-2xl leading-none text-retro-red">
+            <p className="eyebrow text-slate">Unit Price</p>
+            <p className="price mt-1 text-2xl text-retro-red">
               {bdt(product.unit_price_bdt)}
             </p>
           </div>
           <div className="text-right">
-            <p className="font-pixel text-[8px] uppercase text-slate">MOQ</p>
-            <p className="font-term text-2xl leading-none">{Number(product.moq)}</p>
+            <p className="eyebrow text-slate">MOQ</p>
+            <p className="price mt-1 text-2xl">
+              {Number(product.moq).toLocaleString()}
+            </p>
           </div>
         </div>
 
-        <div className="mt-3 flex items-center justify-between gap-2 text-xs">
+        <div className="mt-3 flex items-center justify-between gap-2 text-sm">
           <span className="truncate text-slate/80" title={product.supplier?.business_name}>
             {product.supplier?.business_name}
           </span>
-          <span className="shrink-0 font-medium text-retro-navy">
+          <span className="shrink-0 font-semibold text-retro-navy">
             {pcs(product.available_quantity)}
           </span>
+        </div>
+
+        {/* Delivery terms are a real differentiator between lots, so they get
+            their own row rather than being buried in the detail page. */}
+        <div className="mt-3 flex flex-wrap gap-1.5 border-t-2 border-dashed border-ink/30 pt-3">
+          {product.free_delivery ? (
+            <Tag color="bg-retro-green">✓ Free Delivery</Tag>
+          ) : (
+            <span className="text-sm text-slate/70">
+              + {bdt(product.estimated_transport_cost)} delivery
+            </span>
+          )}
         </div>
       </div>
     </Link>

@@ -7,21 +7,25 @@
     color-scheme: light;
   }
 
-  html {
-    /* Keeps upscaled pixel art crisp instead of blurry. */
-    image-rendering: pixelated;
-  }
-
   body {
     @apply bg-paper text-ink font-body antialiased;
+    font-size: 1rem;
+    line-height: 1.65;
     background-image:
-      linear-gradient(rgba(21, 21, 39, 0.045) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(21, 21, 39, 0.045) 1px, transparent 1px);
-    background-size: 24px 24px;
+      linear-gradient(rgba(21, 21, 39, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(21, 21, 39, 0.04) 1px, transparent 1px);
+    background-size: 28px 28px;
     min-height: 100vh;
   }
 
-  /* Chunky scrollbar to match the theme. */
+  /* Numerals line up in columns and never reflow as values change. */
+  .font-num,
+  table,
+  input[type='number'] {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+
   ::-webkit-scrollbar {
     width: 14px;
     height: 14px;
@@ -49,7 +53,7 @@
 }
 
 @layer components {
-  /* --- The core "pixel panel" primitive everything else builds on --- */
+  /* --- Structural primitives --- */
   .pixel-box {
     @apply border-[3px] border-ink bg-paper shadow-pixel;
   }
@@ -58,33 +62,70 @@
     @apply border-4 border-ink bg-paper shadow-pixel-lg;
   }
 
-  /* Buttons physically depress into their own shadow on click. */
+  /* --- Headings ---
+     Press Start 2P only, and never below `pixel-xs`. */
+  .h-display {
+    @apply font-pixel text-pixel-lg uppercase text-ink md:text-pixel-xl;
+  }
+
+  .h-page {
+    @apply font-pixel text-pixel-md uppercase text-ink;
+  }
+
+  .h-section {
+    @apply font-pixel text-pixel-sm uppercase text-ink;
+  }
+
+  .h-card {
+    @apply font-pixel text-pixel-xs uppercase text-ink;
+  }
+
+  /* --- Labels ---
+     Caps + tracking give the retro feel; a legible sans keeps them readable at
+     small sizes, unlike the pixel font this replaced. */
+  .pixel-label {
+    @apply mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-slate;
+  }
+
+  .eyebrow {
+    @apply text-xs font-semibold uppercase tracking-[0.14em] text-slate;
+  }
+
+  /* --- Numerals --- */
+  .stat-value {
+    @apply font-num text-3xl font-bold leading-none tracking-tight text-ink;
+  }
+
+  .price {
+    @apply font-num font-bold leading-none tracking-tight;
+  }
+
+  /* --- Buttons --- */
   .pixel-btn {
     @apply inline-flex items-center justify-center gap-2 border-[3px] border-ink
-           font-pixel text-[10px] uppercase leading-none tracking-wider
-           px-4 py-3 shadow-pixel transition-transform duration-75
+           font-pixel text-pixel-xs uppercase leading-none
+           px-5 py-3.5 shadow-pixel transition-transform duration-75
            active:translate-x-[4px] active:translate-y-[4px] active:shadow-none
            disabled:opacity-50 disabled:cursor-not-allowed
            disabled:active:translate-x-0 disabled:active:translate-y-0
            disabled:active:shadow-pixel;
   }
 
+  /* --- Form controls --- */
   .pixel-input {
-    @apply w-full border-[3px] border-ink bg-white px-3 py-2.5 font-body text-sm
+    @apply w-full border-[3px] border-ink bg-white px-3.5 py-3 font-body text-base
            text-ink shadow-pixel-inset placeholder:text-retro-grey
            focus:outline-none focus:ring-0 focus:border-retro-blue;
   }
 
-  .pixel-label {
-    @apply block font-pixel text-[9px] uppercase tracking-wider text-slate mb-2;
-  }
-
+  /* --- Tags / chips ---
+     Sans-serif, not pixel: these frequently hold long words like
+     "Confirmed by Supplier". */
   .pixel-tag {
-    @apply inline-flex items-center gap-1 border-2 border-ink px-2 py-1
-           font-pixel text-[8px] uppercase leading-none tracking-wide;
+    @apply inline-flex items-center gap-1.5 border-2 border-ink px-2.5 py-1.5
+           text-xs font-semibold uppercase leading-none tracking-[0.08em];
   }
 
-  /* Diagonal hazard stripes used for warnings / empty states. */
   .hazard {
     background-image: repeating-linear-gradient(
       45deg,

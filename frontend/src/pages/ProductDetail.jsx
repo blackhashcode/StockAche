@@ -11,7 +11,7 @@ import { bdt, pcs } from '../lib/format'
 function SpecRow({ label, value }) {
   return (
     <div className="flex items-start justify-between gap-4 border-b-2 border-dashed border-ink/25 py-2.5 last:border-0">
-      <span className="font-pixel text-[8px] uppercase tracking-wider text-slate">
+      <span className="eyebrow text-slate">
         {label}
       </span>
       <span className="text-right text-sm font-medium">{value || '—'}</span>
@@ -19,12 +19,16 @@ function SpecRow({ label, value }) {
   )
 }
 
-/** Quantity × unit price + transport, computed live. */
-function FeeCalculator({ product, quantity, setQuantity }) {
+/** Quantity × unit price + delivery, computed live. */
+function FeeCalculator({ product, quantity, setQuantity, speed, setSpeed }) {
   const qty = Number(quantity) || 0
   const subtotal = qty * Number(product.unit_price_bdt)
   const transport = Number(product.estimated_transport_cost)
-  const total = subtotal + transport
+  const expressFee =
+    speed === 'express' && product.express_delivery_available
+      ? Number(product.express_delivery_fee)
+      : 0
+  const total = subtotal + transport + expressFee
   const belowMoq = qty > 0 && qty < product.moq
   const overStock = qty > product.available_quantity
 
@@ -32,7 +36,7 @@ function FeeCalculator({ product, quantity, setQuantity }) {
 
   return (
     <Card className="border-t-8 border-t-retro-blue">
-      <p className="font-pixel text-[10px] uppercase tracking-wider text-slate">
+      <p className="h-card text-slate">
         Fee Calculator
       </p>
 
@@ -54,7 +58,7 @@ function FeeCalculator({ product, quantity, setQuantity }) {
             step="1"
             value={quantity}
             onChange={(e) => setQuantity(e.target.value)}
-            className="text-center font-term text-2xl"
+            className="text-center price text-2xl"
           />
           <button
             type="button"
@@ -96,35 +100,118 @@ function FeeCalculator({ product, quantity, setQuantity }) {
         </div>
       </div>
 
-      <div className="mt-5 space-y-2 border-t-2 border-dashed border-ink/25 pt-4">
-        <div className="flex justify-between text-sm">
+      {/* Delivery speed */}
+      <div className="mt-6">
+        <span className="pixel-label">Delivery</span>
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() => setSpeed('standard')}
+            className={cx(
+              'flex w-full items-center justify-between gap-3 border-[3px] border-ink p-3 text-left transition-transform duration-75',
+              speed === 'standard'
+                ? 'translate-x-[2px] translate-y-[2px] bg-ink text-paper shadow-none'
+                : 'bg-paper shadow-pixel-sm hover:bg-parchment',
+            )}
+          >
+            <span className="min-w-0">
+              <span className="block text-sm font-bold uppercase tracking-[0.06em]">
+                Standard
+              </span>
+              <span
+                className={cx(
+                  'block text-sm',
+                  speed === 'standard' ? 'text-paper/75' : 'text-slate/70',
+                )}
+              >
+                Usual 3–5 day road freight
+              </span>
+            </span>
+            <span className="price shrink-0 text-base">
+              {product.free_delivery ? 'FREE' : bdt(transport)}
+            </span>
+          </button>
+
+          {product.express_delivery_available && (
+            <button
+              type="button"
+              onClick={() => setSpeed('express')}
+              className={cx(
+                'flex w-full items-center justify-between gap-3 border-[3px] border-ink p-3 text-left transition-transform duration-75',
+                speed === 'express'
+                  ? 'translate-x-[2px] translate-y-[2px] bg-retro-orange shadow-none'
+                  : 'bg-paper shadow-pixel-sm hover:bg-parchment',
+              )}
+            >
+              <span className="min-w-0">
+                <span className="block text-sm font-bold uppercase tracking-[0.06em]">
+                  ⚡ Express — {product.express_delivery_hours}h
+                </span>
+                <span
+                  className={cx(
+                    'block text-sm',
+                    speed === 'express' ? 'text-ink/75' : 'text-slate/70',
+                  )}
+                >
+                  Guaranteed within {product.express_delivery_hours} hours
+                </span>
+              </span>
+              <span className="price shrink-0 text-base">
+                +{bdt(product.express_delivery_fee)}
+              </span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-6 space-y-2.5 border-t-2 border-dashed border-ink/25 pt-4">
+        <div className="flex items-baseline justify-between gap-3 text-sm">
           <span className="text-slate/80">
             {pcs(qty)} × {bdt(product.unit_price_bdt)}
           </span>
-          <span className="font-medium">{bdt(subtotal)}</span>
+          <span className="price text-base">{bdt(subtotal)}</span>
         </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-slate/80">Est. transport</span>
-          <span className="font-medium">{bdt(transport)}</span>
+        <div className="flex items-baseline justify-between gap-3 text-sm">
+          <span className="text-slate/80">
+            {product.free_delivery ? 'Delivery (free)' : 'Delivery'}
+          </span>
+          <span
+            className={cx(
+              'price text-base',
+              product.free_delivery && 'text-retro-green',
+            )}
+          >
+            {product.free_delivery ? 'FREE' : bdt(transport)}
+          </span>
         </div>
-        <div className="flex items-end justify-between border-t-[3px] border-ink pt-3">
-          <span className="font-pixel text-[10px] uppercase tracking-wider">Total</span>
-          <span className="font-term text-4xl leading-none text-retro-red">{bdt(total)}</span>
+        {expressFee > 0 && (
+          <div className="flex items-baseline justify-between gap-3 text-sm">
+            <span className="text-slate/80">
+              Express surcharge ({product.express_delivery_hours}h)
+            </span>
+            <span className="price text-base text-retro-orange">
+              {bdt(expressFee)}
+            </span>
+          </div>
+        )}
+        <div className="flex items-end justify-between gap-3 border-t-[3px] border-ink pt-3">
+          <span className="h-card">Total</span>
+          <span className="price text-3xl text-retro-red">{bdt(total)}</span>
         </div>
         {qty > 0 && (
-          <p className="text-right text-xs text-slate/70">
+          <p className="text-right text-sm text-slate/70">
             ≈ {bdt(perPiece)} per piece, landed
           </p>
         )}
       </div>
 
       {belowMoq && (
-        <p className="mt-4 border-2 border-ink bg-retro-yellow p-2 text-xs">
+        <p className="mt-4 border-2 border-ink bg-retro-yellow p-3 text-sm">
           ⚠ Below the supplier&apos;s MOQ of {pcs(product.moq)}.
         </p>
       )}
       {overStock && (
-        <p className="mt-4 border-2 border-ink bg-retro-red p-2 text-xs text-paper">
+        <p className="mt-4 border-2 border-ink bg-retro-red p-3 text-sm text-paper">
           ⚠ Only {pcs(product.available_quantity)} left in this lot.
         </p>
       )}
@@ -142,6 +229,7 @@ export default function ProductDetail() {
   const [error, setError] = useState(null)
   const [activeImage, setActiveImage] = useState(0)
   const [quantity, setQuantity] = useState('')
+  const [speed, setSpeed] = useState('standard')
 
   useEffect(() => {
     let cancelled = false
@@ -182,20 +270,22 @@ export default function ProductDetail() {
 
   const images = product.images?.length ? product.images : [null]
 
+  const checkoutPath = `/checkout/${product.id}?qty=${qty}&speed=${speed}`
+
   const handleOrder = () => {
     if (!isAuthenticated) {
-      navigate('/login', { state: { from: `/checkout/${product.id}?qty=${qty}` } })
+      navigate('/login', { state: { from: checkoutPath } })
       return
     }
     if (role === 'supplier') return
-    navigate(`/checkout/${product.id}?qty=${qty}`)
+    navigate(checkoutPath)
   }
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
       <Link
         to="/marketplace"
-        className="mb-6 inline-block font-pixel text-[9px] uppercase tracking-wider text-slate hover:text-retro-red"
+        className="mb-6 inline-block eyebrow text-slate hover:text-retro-red"
       >
         ← Back to feed
       </Link>
@@ -237,7 +327,7 @@ export default function ProductDetail() {
           )}
 
           <Card className="mt-6">
-            <p className="font-pixel text-[10px] uppercase tracking-wider text-slate">
+            <p className="h-card text-slate">
               Specifications
             </p>
             <div className="mt-3">
@@ -250,8 +340,20 @@ export default function ProductDetail() {
               <SpecRow label="MOQ" value={pcs(product.moq)} />
               <SpecRow label="Unit Price" value={`${bdt(product.unit_price_bdt)} / pc`} />
               <SpecRow
-                label="Est. Transport"
-                value={bdt(product.estimated_transport_cost)}
+                label="Delivery"
+                value={
+                  product.free_delivery
+                    ? 'Free'
+                    : bdt(product.estimated_transport_cost)
+                }
+              />
+              <SpecRow
+                label="Express"
+                value={
+                  product.express_delivery_available
+                    ? `${product.express_delivery_hours}h · +${bdt(product.express_delivery_fee)}`
+                    : 'Not offered'
+                }
               />
               <SpecRow label="Ships From" value={product.location} />
             </div>
@@ -259,7 +361,7 @@ export default function ProductDetail() {
 
           {product.description && (
             <Card className="mt-6">
-              <p className="font-pixel text-[10px] uppercase tracking-wider text-slate">
+              <p className="h-card text-slate">
                 About This Lot
               </p>
               <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-slate/85">
@@ -275,17 +377,21 @@ export default function ProductDetail() {
             <div className="flex flex-wrap gap-2">
               <Tag color="bg-retro-yellow">{product.category_label}</Tag>
               <Tag color="bg-ink text-paper">{product.gsm} GSM</Tag>
+              {product.free_delivery && <Tag color="bg-retro-green">✓ Free Delivery</Tag>}
+              {product.express_delivery_available && (
+                <Tag color="bg-retro-orange">⚡ {product.express_delivery_hours}h Express</Tag>
+              )}
               {!product.in_stock && <Tag color="bg-retro-red text-paper">Sold Out</Tag>}
             </div>
             <h1 className="mt-4 text-2xl font-bold leading-snug">{product.title}</h1>
-            <p className="mt-2 text-sm text-slate/80">{product.fabric_composition}</p>
+            <p className="mt-2 text-base text-slate/80">{product.fabric_composition}</p>
           </div>
 
           {/* Supplier */}
           <Card className="border-l-8 border-l-retro-purple">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="font-pixel text-[8px] uppercase tracking-wider text-slate">
+                <p className="eyebrow text-slate">
                   Supplied by
                 </p>
                 <Link
@@ -309,7 +415,13 @@ export default function ProductDetail() {
             )}
           </Card>
 
-          <FeeCalculator product={product} quantity={quantity} setQuantity={setQuantity} />
+          <FeeCalculator
+            product={product}
+            quantity={quantity}
+            setQuantity={setQuantity}
+            speed={speed}
+            setSpeed={setSpeed}
+          />
 
           {role === 'supplier' ? (
             <div className="border-[3px] border-ink bg-parchment p-4 text-center">
