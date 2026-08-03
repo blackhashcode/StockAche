@@ -4,6 +4,7 @@ import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Button, Card, ErrorBanner, Field, Input, Loader, cx } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
+import { readAuthErrorFromUrl } from '../lib/supabase'
 
 const MODES = {
   signin: {
@@ -22,12 +23,70 @@ const MODES = {
   },
 }
 
+/**
+ * Full-panel confirmation screen.
+ *
+ * Supabase withholds the session until the emailed link is clicked, so signup
+ * genuinely cannot continue here. That needs to be unmistakable — a small
+ * banner under a still-populated form reads as "nothing happened".
+ */
+export function ConfirmEmailScreen({ email, onResend, onBackToSignIn, resending, sentAgain }) {
+  return (
+    <div className="mx-auto max-w-xl px-4 py-14">
+      <Card className="border-t-8 border-t-retro-green">
+        <div className="flex items-start gap-4">
+          <span className="grid h-14 w-14 shrink-0 place-items-center border-[3px] border-ink bg-retro-green text-2xl">
+            ✉
+          </span>
+          <div className="min-w-0">
+            <h1 className="h-section">Confirm your email</h1>
+            <p className="mt-3 text-base leading-relaxed text-slate/85">
+              Your account is created. We sent a confirmation link to{' '}
+              <strong className="break-all">{email}</strong>. Click it and you will be
+              brought straight back here, signed in.
+            </p>
+          </div>
+        </div>
+
+        <ol className="mt-6 space-y-3 border-t-2 border-dashed border-ink/30 pt-5">
+          {[
+            'Open your inbox and look for a mail from Supabase.',
+            'Check the spam folder — confirmation mail often lands there.',
+            'Click the link. It expires after about an hour.',
+          ].map((step, i) => (
+            <li key={step} className="flex gap-3 text-base">
+              <span className="grid h-6 w-6 shrink-0 place-items-center border-2 border-ink bg-retro-yellow text-xs font-bold">
+                {i + 1}
+              </span>
+              <span className="text-slate/85">{step}</span>
+            </li>
+          ))}
+        </ol>
+
+        {sentAgain && (
+          <p className="mt-5 border-2 border-ink bg-retro-green p-3 text-base">
+            ✓ A fresh confirmation link is on its way to {email}.
+          </p>
+        )}
+
+        <div className="mt-6 flex flex-wrap gap-3">
+          <Button variant="ghost" onClick={onResend} loading={resending}>
+            Resend Link
+          </Button>
+          <Button onClick={onBackToSignIn}>I&apos;ve Confirmed — Sign In</Button>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
 export default function Login() {
   const {
     loginWithGoogle,
     loginWithPassword,
     signUpWithPassword,
     sendPasswordReset,
+    resendConfirmation,
     isAuthenticated,
     isOnboarded,
     googleEnabled,
@@ -39,15 +98,18 @@ export default function Login() {
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(null)
   const [notice, setNotice] = useState(null)
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(null)
+  const [sentAgain, setSentAgain] = useState(false)
+  // Set when sign-in failed specifically because the address is unconfirmed.
+  const [needsConfirmation, setNeedsConfirmation] = useState(false)
+
   const navigate = useNavigate()
   const location = useLocation()
   const toast = useToast()
 
-  // Supabase reports OAuth failures back on the URL fragment.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''))
-    const description = params.get('error_description')
-    if (description) setError({ message: decodeURIComponent(description) })
+    const fromUrl = readAuthErrorFromUrl()
+    if (fromUrl) setError(fromUrl)
   }, [])
 
   if (loading) return <Loader label="Checking session" />
@@ -60,14 +122,52 @@ export default function Login() {
   const copy = MODES[mode]
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
 
-  const swapMode = () => {
-    setMode((m) => (m === 'signin' ? 'signup' : 'signin'))
+  const clearFeedback = () => {
     setError(null)
     setNotice(null)
+    setNeedsConfirmation(false)
+  }
+
+  const swapMode = () => {
+    setMode((m) => (m === 'signin' ? 'signup' : 'signin'))
+    clearFeedback()
+  }
+
+  const handleResend = async () => {
+    const target = awaitingConfirmation || form.email
+    if (!target) return
+    setBusy('resend')
+    setError(null)
+    try {
+      await resendConfirmation(target)
+      setSentAgain(true)
+      if (!awaitingConfirmation) setNotice(`New confirmation link sent to ${target}.`)
+    } catch (err) {
+      setError(err)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (awaitingConfirmation) {
+    return (
+      <ConfirmEmailScreen
+        email={awaitingConfirmation}
+        resending={busy === 'resend'}
+        sentAgain={sentAgain}
+        onResend={handleResend}
+        onBackToSignIn={() => {
+          setAwaitingConfirmation(null)
+          setSentAgain(false)
+          setMode('signin')
+          clearFeedback()
+        }}
+      />
+    )
   }
 
   const handleGoogle = async () => {
-    setError(null)
+    clearFeedback()
     setBusy('google')
     try {
       await loginWithGoogle()
@@ -79,8 +179,7 @@ export default function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setError(null)
-    setNotice(null)
+    clearFeedback()
 
     if (mode === 'signup') {
       if (form.password.length < 8) {
@@ -96,16 +195,15 @@ export default function Login() {
     setBusy('email')
     try {
       if (mode === 'signup') {
-        const { needsConfirmation } = await signUpWithPassword(
+        const { needsConfirmation: pending } = await signUpWithPassword(
           form.email,
           form.password,
           form.fullName,
         )
-        if (needsConfirmation) {
-          setNotice(
-            `We sent a confirmation link to ${form.email}. Click it, then sign in.`,
-          )
-          setMode('signin')
+        if (pending) {
+          // Cannot proceed to onboarding without a session — hand off to the
+          // dedicated confirmation screen.
+          setAwaitingConfirmation(form.email.trim().toLowerCase())
           return
         }
         toast.success('Account created.')
@@ -116,6 +214,7 @@ export default function Login() {
       navigate(location.state?.from || '/onboarding', { replace: true })
     } catch (err) {
       setError(err)
+      if (err?.needsConfirmation) setNeedsConfirmation(true)
     } finally {
       setBusy(null)
     }
@@ -126,7 +225,7 @@ export default function Login() {
       setError({ message: 'Enter your email address first, then request a reset.' })
       return
     }
-    setError(null)
+    clearFeedback()
     setBusy('reset')
     try {
       await sendPasswordReset(form.email)
@@ -147,6 +246,23 @@ export default function Login() {
 
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
+      {needsConfirmation && (
+        <div className="mb-4 border-[3px] border-ink bg-retro-yellow p-4 shadow-pixel">
+          <p className="text-base">
+            Need a new confirmation link for <strong>{form.email}</strong>?
+          </p>
+          <Button
+            size="sm"
+            variant="dark"
+            className="mt-3"
+            loading={busy === 'resend'}
+            onClick={handleResend}
+          >
+            Resend Confirmation Email
+          </Button>
+        </div>
+      )}
+
       {notice && (
         <div className="mb-4 border-[3px] border-ink bg-retro-green p-4 shadow-pixel">
           <p className="text-base">{notice}</p>
@@ -154,7 +270,6 @@ export default function Login() {
       )}
 
       <Card>
-        {/* Google first: fewest steps, and it carries a verified email. */}
         <Button
           variant="dark"
           size="lg"
@@ -246,6 +361,12 @@ export default function Login() {
             {copy.submit}
           </Button>
         </form>
+
+        {mode === 'signup' && (
+          <p className="mt-4 text-center text-sm text-slate/70">
+            You will need to confirm your email address before you can sign in.
+          </p>
+        )}
 
         {mode === 'signin' && (
           <button

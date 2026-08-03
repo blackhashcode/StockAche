@@ -25,6 +25,7 @@ to delivery.
 - [Authentication setup](#authentication-setup)
 - [Payments](#payments)
 - [Moving to Supabase Postgres](#moving-to-supabase-postgres)
+- [Rotating exposed keys](#rotating-exposed-keys)
 - [Security notes](#security-notes)
 - [Project layout](#project-layout)
 - [Typography](#typography)
@@ -413,10 +414,33 @@ Supabase Auth handles identity. Two methods are wired up:
 
 ### Email and password
 
-Works out of the box once `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set. If
-**Confirm email** is enabled in Supabase (Authentication → Providers → Email), a new signup
-receives a confirmation link and the UI tells them to click it before signing in. Password
-reset is wired to `resetPasswordForEmail`.
+Works once `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set.
+
+**The behaviour to be aware of:** Supabase enables **Confirm email** by default. With it on,
+`signUp` creates the user but returns **no session** — so the app genuinely cannot continue to
+onboarding, and the account shows up in the Supabase dashboard even though the user is not
+signed in. That is expected, not a failure.
+
+The UI handles this with a dedicated *Confirm your email* screen carrying a resend button,
+rather than a banner that is easy to miss. Signing in before confirming is caught and offers
+a resend too. Confirmation links land on `/auth/callback`; expired ones show an explanatory
+message instead of silently bouncing back to the login page.
+
+To check which mode your project is in:
+
+```bash
+curl -s -H "apikey: YOUR_PUBLISHABLE_KEY" https://<project-ref>.supabase.co/auth/v1/settings
+```
+
+`"mailer_autoconfirm": false` means confirmation is required. To skip it for a smoother live
+demo, turn **Confirm email** off under Authentication → Providers → Email — signups then get a
+session immediately and land straight on onboarding.
+
+Whichever mode you use, add `http://localhost:5173/auth/callback` to Authentication → URL
+Configuration → Redirect URLs, or Supabase falls back to the project Site URL and the link
+goes nowhere useful.
+
+Password reset is wired to `resetPasswordForEmail` and returns through the same callback.
 
 ### Google
 
@@ -480,6 +504,60 @@ DATABASE_URL=postgresql://postgres.<ref>:<db-password>@aws-0-<region>.pooler.sup
 
 Then `python manage.py migrate`. Nothing else changes — `settings.py` parses the URL and swaps
 the engine.
+
+---
+
+## Rotating exposed keys
+
+If a Supabase key has ever appeared in a chat, a screenshot, an issue or a commit, treat it
+as public and rotate it. A leaked `service_role` credential **bypasses Row Level Security
+entirely** — it can read and delete every row in the project.
+
+### 1. Rotate
+
+**Supabase Dashboard → Project Settings → API Keys**
+
+| Key | What to do |
+| --- | --- |
+| Publishable / `anon` | Safe in the browser by design. Rotate only if you want to invalidate old clients. |
+| Secret (`sb_secret_…`) | **Revoke and create a new one.** Paste it into `backend/.env` as `SUPABASE_SERVICE_KEY`. |
+| Legacy `service_role` JWT | **Disable legacy JWT keys** once nothing uses them — Settings → API Keys → Legacy keys. |
+
+Legacy JWT keys are long-lived (the ones in this project run to 2036) and stay valid until
+explicitly disabled, so revoking the new-format secret key alone is not enough.
+
+### 2. Update and verify
+
+```bash
+python backend/manage.py check
+```
+
+`stockache.W002` warns when `SUPABASE_SERVICE_KEY` is missing; `stockache.E001` fails the
+check if a service-role credential has been put into `frontend/.env`, where it would be
+compiled into the browser bundle.
+
+Then confirm the old credential is dead — this should return `401`, not `200`:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -H "apikey: OLD_KEY" -H "Authorization: Bearer OLD_KEY" https://<project-ref>.supabase.co/storage/v1/bucket
+```
+
+### 3. Keep it from recurring
+
+```bash
+python scripts/check_secrets.py --install-hook
+```
+
+Installs a pre-commit hook that blocks any commit containing a Supabase secret key, a
+`service_role` JWT, a Google OAuth client secret, a private key block, or a Postgres URL with
+a password. Run it across the whole repo at any time with:
+
+```bash
+python scripts/check_secrets.py
+```
+
+Documentation placeholders such as `<db-password>` are recognised and ignored, so the scanner
+stays quiet unless something is genuinely wrong.
 
 ---
 

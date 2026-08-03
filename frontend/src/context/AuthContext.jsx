@@ -10,13 +10,17 @@ import {
 
 import { api, setTokenGetter } from '../lib/api'
 import {
+  getAccessToken,
   requestPasswordReset,
+  resendConfirmationEmail,
   signInWithEmail,
   signInWithGoogle,
   signOutSupabase,
   signUpWithEmail,
   supabase,
   supabaseConfigured,
+  urlHasAuthPayload,
+  waitForSession,
 } from '../lib/supabase'
 
 const AuthContext = createContext(null)
@@ -36,9 +40,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     setTokenGetter(async () => {
       if (devTokenRef.current) return devTokenRef.current
-      if (!supabase) return null
-      const { data } = await supabase.auth.getSession()
-      return data?.session?.access_token ?? null
+      return getAccessToken()
     })
   }, [])
 
@@ -59,8 +61,11 @@ export function AuthProvider({ children }) {
   const hasSession = useCallback(async () => {
     if (devTokenRef.current) return true
     if (!supabase) return false
-    const { data } = await supabase.auth.getSession()
-    return Boolean(data?.session)
+    // Landing on a callback URL means the client is still busy turning the
+    // fragment into a session; asking getSession() right now would race it and
+    // wrongly report "signed out".
+    if (urlHasAuthPayload()) return Boolean(await waitForSession())
+    return Boolean(await getAccessToken())
   }, [])
 
   // Bootstrap: restore an existing session on first paint.
@@ -122,7 +127,12 @@ export function AuthProvider({ children }) {
     await requestPasswordReset(email)
   }, [])
 
-  /** Prototype-only shortcut into a seeded demo account. */
+  const resendConfirmation = useCallback(async (email) => {
+    setAuthError(null)
+    await resendConfirmationEmail(email)
+  }, [])
+
+  /** Local-only shortcut into a seeded account, used by the test suite. */
   const loginAsDemo = useCallback(
     async (email) => {
       setLoading(true)
@@ -178,6 +188,7 @@ export function AuthProvider({ children }) {
       loginWithPassword,
       signUpWithPassword,
       sendPasswordReset,
+      resendConfirmation,
       loginAsDemo,
       logout,
       setRole,
@@ -192,6 +203,7 @@ export function AuthProvider({ children }) {
       loginWithPassword,
       signUpWithPassword,
       sendPasswordReset,
+      resendConfirmation,
       loginAsDemo,
       logout,
       setRole,
