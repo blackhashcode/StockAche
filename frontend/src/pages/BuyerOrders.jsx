@@ -28,7 +28,7 @@ function OrderRow({ order }) {
 
         <div className="min-w-[12rem] flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-pixel text-[9px] uppercase tracking-wider text-retro-navy">
+            <span className="eyebrow text-retro-navy">
               {order.reference}
             </span>
             <Tag color={statusColor(order.order_status)}>{order.status_label}</Tag>
@@ -47,7 +47,7 @@ function OrderRow({ order }) {
         </div>
 
         <div className="text-right">
-          <p className="font-term text-3xl leading-none text-retro-red">
+          <p className="price text-3xl text-retro-red">
             {bdt(order.total_price)}
           </p>
           <Link to={`/orders/${order.id}`}>
@@ -93,7 +93,7 @@ export default function BuyerOrders() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
-      <h1 className="font-pixel text-lg uppercase">
+      <h1 className="h-page">
         <span className="text-retro-red">▸ </span>My Orders
       </h1>
       <p className="mt-2 text-sm text-slate/80">
@@ -101,12 +101,41 @@ export default function BuyerOrders() {
       </p>
 
       {stats && (
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat label="Total Orders" value={stats.total_orders} color="bg-retro-blue" />
-          <Stat label="Active" value={stats.active_orders} color="bg-retro-yellow" />
-          <Stat label="Pieces Bought" value={Number(stats.units_bought).toLocaleString()} color="bg-retro-purple" />
-          <Stat label="Total Spend" value={bdt(stats.total_spend_bdt)} color="bg-retro-green" />
-        </div>
+        <>
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Stat label="Total Orders" value={stats.total_orders} color="bg-retro-blue" />
+            <Stat label="Active" value={stats.active_orders} color="bg-retro-yellow" />
+            <Stat
+              label="Pieces Bought"
+              value={Number(stats.units_bought).toLocaleString()}
+              color="bg-retro-purple"
+            />
+            <Stat
+              label="Total Spend"
+              value={bdt(stats.total_spend_bdt)}
+              color="bg-retro-green"
+            />
+          </div>
+
+          {/* The quota is only worth surfacing once it starts to bite. */}
+          {stats.remaining_self_cancels < stats.self_cancel_limit && (
+            <div
+              className={`mt-4 border-[3px] border-ink p-4 shadow-pixel ${
+                stats.remaining_self_cancels === 0 ? 'bg-retro-yellow' : 'bg-parchment'
+              }`}
+            >
+              <p className="h-card">
+                {stats.remaining_self_cancels} of {stats.self_cancel_limit} free
+                cancellations left this month
+              </p>
+              <p className="mt-2 text-base text-slate/85">
+                {stats.remaining_self_cancels === 0
+                  ? 'Further cancellations need the supplier to approve a request. Delivered orders and supplier-side cancellations never count against this.'
+                  : 'Cancelling before a supplier confirms is always free. The quota resets on the 1st.'}
+              </p>
+            </div>
+          )}
+        </>
       )}
 
       <div className="mt-8 flex flex-wrap gap-2">
@@ -115,7 +144,7 @@ export default function BuyerOrders() {
             key={option.label}
             onClick={() => setTab(option.value)}
             className={cx(
-              'border-[3px] border-ink px-3 py-2 font-pixel text-[9px] uppercase tracking-wider transition-transform duration-75',
+              'border-[3px] border-ink px-3 py-2 eyebrow transition-transform duration-75',
               tab === option.value
                 ? 'translate-x-[2px] translate-y-[2px] bg-ink text-paper shadow-none'
                 : 'bg-paper shadow-pixel-sm hover:bg-retro-yellow',

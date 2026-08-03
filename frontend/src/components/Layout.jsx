@@ -31,7 +31,7 @@ function Ticker() {
     <div className="overflow-hidden border-b-[3px] border-ink bg-retro-yellow py-1.5">
       <div className="flex w-max animate-marquee gap-8 whitespace-nowrap">
         {strip.map((item, i) => (
-          <span key={i} className="font-pixel text-[8px] uppercase tracking-wider text-ink">
+          <span key={i} className="eyebrow text-ink">
             ★ {item}
           </span>
         ))}
@@ -41,7 +41,7 @@ function Ticker() {
 }
 
 export function Navbar() {
-  const { account, isAuthenticated, role, logout, isDemoSession } = useAuth()
+  const { account, isAuthenticated, role, logout } = useAuth()
   const [open, setOpen] = useState(false)
   const location = useLocation()
 
@@ -51,7 +51,7 @@ export function Navbar() {
 
   const linkClass = ({ isActive }) =>
     cx(
-      'border-[3px] border-ink px-3 py-2 font-pixel text-[9px] uppercase tracking-wider transition-transform duration-75',
+      'border-[3px] border-ink px-3 py-2 eyebrow transition-transform duration-75',
       isActive
         ? 'bg-ink text-paper shadow-none translate-x-[2px] translate-y-[2px]'
         : 'bg-paper text-ink shadow-pixel-sm hover:bg-retro-yellow active:translate-x-[2px] active:translate-y-[2px] active:shadow-none',
@@ -66,7 +66,7 @@ export function Navbar() {
             <span className="grid h-9 w-9 place-items-center border-[3px] border-ink bg-retro-red font-pixel text-xs text-paper shadow-pixel-sm transition-transform group-hover:-translate-y-0.5">
               S
             </span>
-            <span className="font-pixel text-xs uppercase tracking-tight">
+            <span className="h-section">
               Stock<span className="text-retro-red">Ache</span>
               <span className="animate-blink text-retro-blue">?</span>
             </span>
@@ -146,13 +146,6 @@ export function Navbar() {
         )}
       </nav>
 
-      {isDemoSession && (
-        <div className="border-b-[3px] border-ink bg-retro-purple px-4 py-1 text-center">
-          <span className="font-pixel text-[8px] uppercase tracking-wider text-paper">
-            Demo session — seeded data, mock payments
-          </span>
-        </div>
-      )}
     </header>
   )
 }
@@ -166,16 +159,16 @@ function Footer() {
             Stock<span className="text-retro-red">Ache</span>
             <span className="text-retro-blue">?</span>
           </p>
-          <p className="mt-3 max-w-xs text-sm text-paper/70">
+          <p className="mt-3 max-w-xs text-base text-paper/70">
             A stocklot marketplace and order tracker connecting RMG wholesalers to small
             online garment stores across Bangladesh.
           </p>
         </div>
         <div>
-          <p className="font-pixel text-[10px] uppercase tracking-wider text-retro-yellow">
+          <p className="h-card text-retro-yellow">
             Platform
           </p>
-          <ul className="mt-3 space-y-2 text-sm text-paper/70">
+          <ul className="mt-3 space-y-2 text-base text-paper/70">
             <li>
               <Link to="/marketplace" className="hover:text-retro-yellow">
                 Browse Stocklots
@@ -194,19 +187,17 @@ function Footer() {
           </ul>
         </div>
         <div>
-          <p className="font-pixel text-[10px] uppercase tracking-wider text-retro-yellow">
-            Prototype
-          </p>
-          <p className="mt-3 text-sm text-paper/70">
-            Payments run in mock mode. bKash, card and COD flows are simulated end to end
-            until live gateway credentials are added.
-          </p>
+          <p className="h-card text-retro-yellow">Trust &amp; Safety</p>
+          <ul className="mt-3 space-y-2 text-base text-paper/70">
+            <li>Every trader is identity-verified</li>
+            <li>Trade licence checks for suppliers</li>
+            <li>Free cancellation before confirmation</li>
+            <li>bKash, card and cash on delivery</li>
+          </ul>
         </div>
       </div>
       <div className="border-t-[3px] border-slate px-4 py-4 text-center">
-        <p className="font-pixel text-[8px] uppercase tracking-wider text-paper/50">
-          © 2026 StockAche — Hackathon Prototype
-        </p>
+        <p className="eyebrow text-paper/50">© 2026 StockAche</p>
       </div>
     </footer>
   )

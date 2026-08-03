@@ -168,7 +168,7 @@ export default function Marketplace() {
             value={filters.gsm_min}
             onChange={(e) => update({ gsm_min: e.target.value })}
           />
-          <span className="font-pixel text-[10px]">—</span>
+          <span className="font-pixel text-pixel-xs">—</span>
           <Input
             type="number"
             min="0"
@@ -190,7 +190,7 @@ export default function Marketplace() {
             value={filters.moq_min}
             onChange={(e) => update({ moq_min: e.target.value })}
           />
-          <span className="font-pixel text-[10px]">—</span>
+          <span className="font-pixel text-pixel-xs">—</span>
           <Input
             type="number"
             min="0"
@@ -212,7 +212,7 @@ export default function Marketplace() {
             value={filters.price_min}
             onChange={(e) => update({ price_min: e.target.value })}
           />
-          <span className="font-pixel text-[10px]">—</span>
+          <span className="font-pixel text-pixel-xs">—</span>
           <Input
             type="number"
             min="0"
@@ -247,7 +247,7 @@ export default function Marketplace() {
           onChange={(e) => update({ verified_only: e.target.checked ? 'true' : '' })}
           className="h-5 w-5 shrink-0 accent-retro-green"
         />
-        <span className="font-pixel text-[9px] uppercase tracking-wider">
+        <span className="eyebrow">
           Verified suppliers only
         </span>
       </label>
@@ -263,7 +263,7 @@ export default function Marketplace() {
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
       <div className="mb-6">
-        <h1 className="font-pixel text-lg uppercase">
+        <h1 className="h-page">
           <span className="text-retro-red">▸ </span>Stocklot Feed
         </h1>
         <p className="mt-2 text-sm text-slate/80">
@@ -280,7 +280,7 @@ export default function Marketplace() {
             placeholder="Search lots, fabrics, suppliers…"
             className="pl-10"
           />
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-pixel text-[10px]">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-pixel text-pixel-xs">
             ⌕
           </span>
         </div>
@@ -347,7 +347,7 @@ export default function Marketplace() {
                   >
                     ← Prev
                   </Button>
-                  <span className="font-pixel text-[10px] uppercase">
+                  <span className="h-card">
                     {page} / {totalPages}
                   </span>
                   <Button

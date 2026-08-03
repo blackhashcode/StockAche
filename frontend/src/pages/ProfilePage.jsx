@@ -26,7 +26,7 @@ export default function ProfilePage({ kind }) {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="font-pixel text-lg uppercase">
+      <h1 className="h-page">
         <span className="text-retro-red">▸ </span>
         {kind === 'supplier' ? 'Supplier Profile' : 'Buyer Profile'}
       </h1>
@@ -43,7 +43,7 @@ export default function ProfilePage({ kind }) {
           <div className="min-w-0 flex-1">
             <p className="truncate text-base font-bold">{account?.full_name || '—'}</p>
             <p className="truncate text-sm text-slate/70">{account?.email}</p>
-            <p className="mt-1 font-pixel text-[7px] uppercase tracking-wider text-slate/60">
+            <p className="mt-1 eyebrow text-slate/60">
               Joined {shortDate(account?.created_at)}
             </p>
           </div>
