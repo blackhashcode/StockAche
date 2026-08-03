@@ -27,7 +27,7 @@ function Placeholder({ seed = '', label = 'NO IMAGE' }) {
           />
         ))}
       </div>
-      <span className="font-pixel text-[8px] uppercase tracking-wider text-slate/60">
+      <span className="eyebrow text-slate/60">
         {label}
       </span>
     </div>

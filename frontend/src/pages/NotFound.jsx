@@ -6,7 +6,7 @@ export default function NotFound() {
   return (
     <div className="mx-auto flex max-w-2xl flex-col items-center px-4 py-24 text-center">
       <p className="font-pixel text-5xl text-retro-red text-shadow-pixel">404</p>
-      <h1 className="mt-8 font-pixel text-sm uppercase leading-relaxed">
+      <h1 className="mt-8 h-section">
         This lot doesn&apos;t exist
       </h1>
       <p className="mt-4 text-sm text-slate/80">

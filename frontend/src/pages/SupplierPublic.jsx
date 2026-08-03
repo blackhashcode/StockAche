@@ -41,7 +41,7 @@ export default function SupplierPublic() {
     <div className="mx-auto max-w-7xl px-4 py-8">
       <Link
         to="/marketplace"
-        className="mb-6 inline-block font-pixel text-[9px] uppercase tracking-wider text-slate hover:text-retro-red"
+        className="mb-6 inline-block eyebrow text-slate hover:text-retro-red"
       >
         ← Back to feed
       </Link>
@@ -70,14 +70,14 @@ export default function SupplierPublic() {
 
           <div className="grid grid-cols-2 gap-3">
             <div className="border-[3px] border-ink bg-parchment p-3 text-center">
-              <p className="font-term text-3xl leading-none">
+              <p className="price text-3xl">
                 {supplier.rating > 0 ? supplier.rating : '—'}
               </p>
-              <p className="mt-1 font-pixel text-[7px] uppercase text-slate">Rating</p>
+              <p className="mt-1 eyebrow text-slate">Rating</p>
             </div>
             <div className="border-[3px] border-ink bg-parchment p-3 text-center">
-              <p className="font-term text-3xl leading-none">{supplier.listings.length}</p>
-              <p className="mt-1 font-pixel text-[7px] uppercase text-slate">Live Lots</p>
+              <p className="price text-3xl">{supplier.listings.length}</p>
+              <p className="mt-1 eyebrow text-slate">Live Lots</p>
             </div>
           </div>
         </div>

@@ -5,6 +5,7 @@ import ImageUploader from '../components/ImageUploader'
 import {
   Button,
   Card,
+  Checkbox,
   ErrorBanner,
   Field,
   Input,
@@ -29,6 +30,10 @@ const BLANK = {
   moq: '',
   unit_price_bdt: '',
   estimated_transport_cost: '',
+  free_delivery: false,
+  express_delivery_available: false,
+  express_delivery_fee: '',
+  express_delivery_hours: '24',
   location: '',
   images: [],
   is_active: true,
@@ -63,6 +68,10 @@ export default function ListingForm() {
           moq: String(data.moq),
           unit_price_bdt: String(data.unit_price_bdt),
           estimated_transport_cost: String(data.estimated_transport_cost),
+          free_delivery: data.free_delivery,
+          express_delivery_available: data.express_delivery_available,
+          express_delivery_fee: String(data.express_delivery_fee),
+          express_delivery_hours: String(data.express_delivery_hours),
           location: data.location || '',
           images: data.images || [],
           is_active: data.is_active,
@@ -85,7 +94,13 @@ export default function ListingForm() {
       available_quantity: Number(form.available_quantity),
       moq: Number(form.moq),
       unit_price_bdt: form.unit_price_bdt,
-      estimated_transport_cost: form.estimated_transport_cost || '0',
+      estimated_transport_cost: form.free_delivery
+        ? '0'
+        : form.estimated_transport_cost || '0',
+      express_delivery_fee: form.express_delivery_available
+        ? form.express_delivery_fee || '0'
+        : '0',
+      express_delivery_hours: Number(form.express_delivery_hours) || 24,
     }
 
     try {
@@ -107,20 +122,28 @@ export default function ListingForm() {
 
   if (loading) return <Loader label="Loading listing" />
 
-  const moqTotal =
-    (Number(form.moq) || 0) * (Number(form.unit_price_bdt) || 0) +
-    (Number(form.estimated_transport_cost) || 0)
+  const goodsAtMoq = (Number(form.moq) || 0) * (Number(form.unit_price_bdt) || 0)
+  const transportAtMoq = form.free_delivery
+    ? 0
+    : Number(form.estimated_transport_cost) || 0
+  const moqTotal = goodsAtMoq + transportAtMoq
+
+  // Commission is charged on goods value only, so the supplier can see exactly
+  // what lands in their account before they publish.
+  const commissionRate = Number(meta.commission_rate ?? 0.02)
+  const commissionAtMoq = goodsAtMoq * commissionRate
+  const payoutAtMoq = goodsAtMoq - commissionAtMoq + transportAtMoq
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8">
       <Link
         to="/supplier/listings"
-        className="mb-6 inline-block font-pixel text-[9px] uppercase tracking-wider text-slate hover:text-retro-red"
+        className="mb-6 inline-block eyebrow text-slate hover:text-retro-red"
       >
         ← Back to listings
       </Link>
 
-      <h1 className="font-pixel text-lg uppercase">
+      <h1 className="h-page">
         <span className="text-retro-red">▸ </span>
         {isEdit ? 'Edit Stocklot' : 'New Stocklot'}
       </h1>
@@ -133,7 +156,7 @@ export default function ListingForm() {
       <form onSubmit={submit} className="mt-6 space-y-6">
         {/* Basics */}
         <Card>
-          <p className="font-pixel text-[10px] uppercase tracking-wider text-slate">
+          <p className="h-card text-slate">
             1 — The Lot
           </p>
           <div className="mt-4 space-y-5">
@@ -209,7 +232,7 @@ export default function ListingForm() {
 
         {/* Pricing */}
         <Card>
-          <p className="font-pixel text-[10px] uppercase tracking-wider text-slate">
+          <p className="h-card text-slate">
             2 — Quantity &amp; Pricing
           </p>
           <div className="mt-4 grid gap-5 sm:grid-cols-2">
@@ -244,26 +267,24 @@ export default function ListingForm() {
                 required
               />
             </Field>
-            <Field label="Est. Transport Cost (৳)" hint="Flat delivery estimate per order">
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={form.estimated_transport_cost}
-                onChange={set('estimated_transport_cost')}
-                placeholder="1800.00"
-              />
-            </Field>
           </div>
 
           {moqTotal > 0 && (
-            <div className="mt-5 flex items-center justify-between border-[3px] border-ink bg-parchment p-3">
-              <span className="font-pixel text-[9px] uppercase tracking-wider text-slate">
-                Buyer pays at MOQ
-              </span>
-              <span className="font-term text-2xl leading-none text-retro-red">
-                {bdt(moqTotal)}
-              </span>
+            <div className="mt-5 border-[3px] border-ink bg-parchment p-4">
+              <div className="flex items-center justify-between gap-4">
+                <span className="eyebrow text-slate">Buyer pays at MOQ</span>
+                <span className="price text-2xl text-retro-red">{bdt(moqTotal)}</span>
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-4 border-t-2 border-dashed border-ink/30 pt-3">
+                <span className="text-sm text-slate/80">
+                  Platform commission ({(commissionRate * 100).toFixed(0)}% of goods value)
+                </span>
+                <span className="price text-base text-slate">−{bdt(commissionAtMoq)}</span>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-4">
+                <span className="text-sm font-semibold">You receive</span>
+                <span className="price text-xl text-retro-green">{bdt(payoutAtMoq)}</span>
+              </div>
             </div>
           )}
 
@@ -281,10 +302,97 @@ export default function ListingForm() {
           </div>
         </Card>
 
+        {/* Delivery */}
+        <Card>
+          <p className="h-card text-slate">3 — Delivery Options</p>
+          <p className="mt-2 text-base text-slate/80">
+            Delivery terms are one of the first things buyers compare between lots.
+          </p>
+
+          <div className="mt-5 space-y-5">
+            <Checkbox
+              checked={form.free_delivery}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, free_delivery: e.target.checked }))
+              }
+              label="Offer free delivery"
+              hint="You absorb the transport cost. Listings with free delivery get a green badge on the feed."
+            />
+
+            {!form.free_delivery && (
+              <Field
+                label="Transport Cost (৳)"
+                hint="Flat delivery charge added to every order of this lot."
+              >
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.estimated_transport_cost}
+                  onChange={set('estimated_transport_cost')}
+                  placeholder="1800.00"
+                  className="price"
+                />
+              </Field>
+            )}
+
+            <div className="border-t-2 border-dashed border-ink/30 pt-5">
+              <Checkbox
+                checked={form.express_delivery_available}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    express_delivery_available: e.target.checked,
+                  }))
+                }
+                label="⚡ Offer express delivery"
+                hint="A guaranteed fast window for an extra fee. Only enable it if you can genuinely meet the deadline."
+              />
+
+              {form.express_delivery_available && (
+                <div className="mt-4 grid gap-5 sm:grid-cols-2">
+                  <Field
+                    label="Express Fee (৳)"
+                    required
+                    hint="Keep it affordable — this is on top of transport."
+                  >
+                    <Input
+                      type="number"
+                      min="1"
+                      step="0.01"
+                      value={form.express_delivery_fee}
+                      onChange={set('express_delivery_fee')}
+                      placeholder="850.00"
+                      className="price"
+                      required
+                    />
+                  </Field>
+                  <Field
+                    label="Delivery Window (hours)"
+                    required
+                    hint="Between 1 and 72 hours."
+                  >
+                    <Input
+                      type="number"
+                      min="1"
+                      max="72"
+                      value={form.express_delivery_hours}
+                      onChange={set('express_delivery_hours')}
+                      placeholder="24"
+                      className="price"
+                      required
+                    />
+                  </Field>
+                </div>
+              )}
+            </div>
+          </div>
+        </Card>
+
         {/* Photos */}
         <Card>
-          <p className="font-pixel text-[10px] uppercase tracking-wider text-slate">
-            3 — Photos
+          <p className="h-card text-slate">
+            4 — Photos
           </p>
           <p className="mt-2 text-sm text-slate/80">
             Real photos of the actual lot. Buyers skip listings without them.

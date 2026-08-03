@@ -1,8 +1,11 @@
-from decimal import Decimal
+from datetime import timedelta
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Count, Sum
+from django.db.models.functions import TruncMonth
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -14,7 +17,11 @@ from .filters import ProductFilter
 from .models import (
     ALLOWED_TRANSITIONS,
     ORDER_MILESTONES,
+    SELF_CANCEL_LIMIT_PER_MONTH,
     Account,
+    CancellationRequest,
+    CancellationStatus,
+    DeliverySpeed,
     FabricCategory,
     Order,
     OrderEvent,
@@ -30,6 +37,9 @@ from .permissions import IsBuyer, IsSupplier, IsSupplierOrReadOnly
 from .serializers import (
     AccountSerializer,
     BuyerProfileSerializer,
+    CancellationRequestCreateSerializer,
+    CancellationRequestSerializer,
+    CancellationResolveSerializer,
     OrderCreateSerializer,
     OrderReviewSerializer,
     OrderSerializer,
@@ -41,6 +51,60 @@ from .serializers import (
     SupplierPublicSerializer,
 )
 from .storage import upload_to_supabase
+
+TWO_PLACES = Decimal("0.01")
+
+
+def money(value) -> Decimal:
+    return Decimal(value).quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
+
+
+def _release_stock(order) -> None:
+    """Put a cancelled order's quantity back into the lot."""
+    product = Product.objects.select_for_update().get(pk=order.product_id)
+    product.available_quantity += order.ordered_quantity
+    if product.available_quantity >= product.moq:
+        product.is_active = True
+    product.save(update_fields=["available_quantity", "is_active", "updated_at"])
+
+
+def _cancel_order(order, *, by_buyer: bool, reason: str, actor: str, note: str = "") -> None:
+    """Cancel an order, restock the lot and flag any refund.
+
+    `by_buyer` decides whether this counts against the buyer's monthly free
+    cancellation quota. Supplier-initiated cancellations and approved
+    cancellation requests both pass False.
+    """
+    _release_stock(order)
+
+    order.order_status = OrderStatus.CANCELLED
+    order.cancelled_at = timezone.now()
+    order.cancelled_by_buyer = by_buyer
+    order.cancellation_reason = reason
+    fields = [
+        "order_status",
+        "cancelled_at",
+        "cancelled_by_buyer",
+        "cancellation_reason",
+        "updated_at",
+    ]
+
+    if order.payment_status == PaymentStatus.PAID:
+        order.payment_status = PaymentStatus.REFUNDED
+        fields.append("payment_status")
+
+    # A cancelled order earns the platform nothing.
+    order.platform_commission = Decimal("0.00")
+    order.supplier_payout = Decimal("0.00")
+    fields += ["platform_commission", "supplier_payout"]
+
+    order.save(update_fields=fields)
+    OrderEvent.objects.create(
+        order=order,
+        status=OrderStatus.CANCELLED,
+        note=note or reason,
+        created_by=actor,
+    )
 
 DISTRICTS = [
     "Dhaka", "Chattogram", "Narayanganj", "Gazipur", "Savar", "Narsingdi",
@@ -68,6 +132,11 @@ def meta(request):
             "payment_methods": [
                 {"value": v, "label": l} for v, l in PaymentMethod.choices
             ],
+            "delivery_speeds": [
+                {"value": v, "label": l} for v, l in DeliverySpeed.choices
+            ],
+            "commission_rate": str(settings.PLATFORM_COMMISSION_RATE),
+            "self_cancel_limit_per_month": SELF_CANCEL_LIMIT_PER_MONTH,
             "payment_mode": settings.PAYMENT_MODE,
             "dev_login_enabled": settings.ENABLE_DEV_LOGIN,
         }
@@ -259,12 +328,19 @@ class ProductViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], permission_classes=[AllowAny])
     def quote(self, request, pk=None):
         """Server-side fee calculation, so the buyer's total is authoritative."""
-        serializer = QuoteSerializer(
-            data={"product_id": pk, "quantity": request.data.get("quantity", 1)}
-        )
-        serializer.is_valid(raise_exception=True)
         if not Product.objects.filter(pk=pk).exists():
             return Response({"detail": "Listing not found."}, status=404)
+
+        serializer = QuoteSerializer(
+            data={
+                "product_id": pk,
+                "quantity": request.data.get("quantity", 1),
+                "delivery_speed": request.data.get(
+                    "delivery_speed", DeliverySpeed.STANDARD
+                ),
+            }
+        )
+        serializer.is_valid(raise_exception=True)
         return Response(serializer.to_quote())
 
 
@@ -308,11 +384,17 @@ class OrderViewSet(viewsets.GenericViewSet):
         if not IsBuyer().has_permission(request, self):
             raise PermissionDenied("Complete your buyer profile before ordering.")
 
+        buyer = request.user.buyer_profile
+        # Identity documents are mandatory before any money moves.
+        if not buyer.has_identity_documents:
+            raise PermissionDenied(
+                "Add your NID number and a photo of your NID card before ordering."
+            )
+
         serializer = OrderCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         product = data["product"]
-        buyer = request.user.buyer_profile
 
         if product.supplier.account_id == request.user.id:
             raise ValidationError({"detail": "You cannot order your own listing."})
@@ -326,15 +408,40 @@ class OrderViewSet(viewsets.GenericViewSet):
                     {"ordered_quantity": f"Only {locked.available_quantity} pcs left."}
                 )
 
-            subtotal = locked.unit_price_bdt * qty
-            transport = locked.estimated_transport_cost
+            express = (
+                data["delivery_speed"] == DeliverySpeed.EXPRESS
+                and locked.express_delivery_available
+            )
+
+            subtotal = money(locked.unit_price_bdt * qty)
+            transport = money(locked.estimated_transport_cost)
+            express_fee = money(locked.express_delivery_fee) if express else Decimal("0.00")
+
+            # Commission applies to the goods value only. Transport and the
+            # express fee are pass-through costs, so taking a cut of them would
+            # penalise suppliers for delivering further or faster.
+            rate = Decimal(settings.PLATFORM_COMMISSION_RATE)
+            commission = money(subtotal * rate)
+
             order = Order.objects.create(
                 buyer=buyer,
                 product=locked,
                 ordered_quantity=qty,
                 unit_price_bdt=locked.unit_price_bdt,
                 transport_cost=transport,
-                total_price=subtotal + transport,
+                delivery_speed=(
+                    DeliverySpeed.EXPRESS if express else DeliverySpeed.STANDARD
+                ),
+                express_fee=express_fee,
+                promised_delivery_at=(
+                    timezone.now() + timedelta(hours=locked.express_delivery_hours)
+                    if express
+                    else None
+                ),
+                total_price=subtotal + transport + express_fee,
+                commission_rate=rate,
+                platform_commission=commission,
+                supplier_payout=money(subtotal - commission + transport + express_fee),
                 payment_method=data["payment_method"],
                 delivery_address=data["delivery_address"],
                 delivery_district=data.get("delivery_district", ""),
@@ -413,14 +520,12 @@ class OrderViewSet(viewsets.GenericViewSet):
                 fields.append("payment_status")
 
             if new_status == OrderStatus.CANCELLED:
-                # Return the reserved quantity to the lot.
-                product = Product.objects.select_for_update().get(pk=order.product_id)
-                product.available_quantity += order.ordered_quantity
-                if product.available_quantity >= product.moq:
-                    product.is_active = True
-                product.save(
-                    update_fields=["available_quantity", "is_active", "updated_at"]
-                )
+                _release_stock(order)
+                order.cancelled_at = timezone.now()
+                # Supplier-initiated: never counts against the buyer's quota.
+                order.cancelled_by_buyer = False
+                order.cancellation_reason = serializer.validated_data.get("note", "")
+                fields += ["cancelled_at", "cancelled_by_buyer", "cancellation_reason"]
                 if order.payment_status == PaymentStatus.PAID:
                     order.payment_status = PaymentStatus.REFUNDED
                     fields.append("payment_status")
@@ -437,34 +542,170 @@ class OrderViewSet(viewsets.GenericViewSet):
 
     @action(detail=True, methods=["post"], permission_classes=[IsBuyer])
     def cancel(self, request, pk=None):
-        """Buyer may back out only before the supplier confirms."""
-        order = Order.objects.filter(pk=pk, buyer=request.user.buyer_profile).first()
+        """Free self-cancel: pre-confirmation, within the monthly quota.
+
+        Anything else has to go through `request_cancellation` so the supplier
+        gets a say.
+        """
+        buyer = request.user.buyer_profile
+        order = Order.objects.filter(pk=pk, buyer=buyer).first()
         if not order:
             return Response({"detail": "Order not found."}, status=404)
+
         if order.order_status != OrderStatus.PLACED:
             raise ValidationError(
-                {"detail": "This order is already being processed. Contact the supplier."}
+                {
+                    "detail": (
+                        "The supplier has already started on this order. Submit a "
+                        "cancellation request and they will review it."
+                    )
+                }
+            )
+        if buyer.remaining_self_cancels() <= 0:
+            raise ValidationError(
+                {
+                    "detail": (
+                        f"You have used all {SELF_CANCEL_LIMIT_PER_MONTH} free "
+                        "cancellations this month. Submit a cancellation request "
+                        "instead and the supplier will review it."
+                    )
+                }
             )
 
         with transaction.atomic():
-            product = Product.objects.select_for_update().get(pk=order.product_id)
-            product.available_quantity += order.ordered_quantity
-            if product.available_quantity >= product.moq:
-                product.is_active = True
-            product.save(update_fields=["available_quantity", "is_active", "updated_at"])
-
-            order.order_status = OrderStatus.CANCELLED
-            if order.payment_status == PaymentStatus.PAID:
-                order.payment_status = PaymentStatus.REFUNDED
-            order.save(update_fields=["order_status", "payment_status", "updated_at"])
-            OrderEvent.objects.create(
-                order=order,
-                status=OrderStatus.CANCELLED,
-                note="Cancelled by buyer.",
-                created_by=request.user.buyer_profile.business_name,
+            _cancel_order(
+                order,
+                by_buyer=True,
+                reason=request.data.get("reason", "Cancelled by buyer."),
+                actor=buyer.business_name,
             )
 
         return Response(OrderSerializer(order).data)
+
+    @action(detail=True, methods=["post"], url_path="cancellation-request",
+            permission_classes=[IsBuyer])
+    def request_cancellation(self, request, pk=None):
+        """Ask the supplier to cancel an order that is already under way."""
+        buyer = request.user.buyer_profile
+        order = Order.objects.filter(pk=pk, buyer=buyer).first()
+        if not order:
+            return Response({"detail": "Order not found."}, status=404)
+
+        if order.order_status in (OrderStatus.DELIVERED, OrderStatus.CANCELLED):
+            raise ValidationError(
+                {"detail": "This order is already closed and cannot be cancelled."}
+            )
+        if order.open_cancellation_request:
+            raise ValidationError(
+                {"detail": "You already have a cancellation request awaiting review."}
+            )
+
+        serializer = CancellationRequestCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+            cancellation = CancellationRequest.objects.create(
+                order=order, reason=serializer.validated_data["reason"]
+            )
+            OrderEvent.objects.create(
+                order=order,
+                status=order.order_status,
+                note=f"Buyer requested cancellation: {cancellation.reason}",
+                created_by=buyer.business_name,
+            )
+
+        return Response(
+            CancellationRequestSerializer(cancellation).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="cancellation-request/withdraw",
+            permission_classes=[IsBuyer])
+    def withdraw_cancellation(self, request, pk=None):
+        buyer = request.user.buyer_profile
+        order = Order.objects.filter(pk=pk, buyer=buyer).first()
+        if not order:
+            return Response({"detail": "Order not found."}, status=404)
+
+        pending = order.open_cancellation_request
+        if not pending:
+            raise ValidationError({"detail": "No cancellation request is open."})
+
+        pending.status = CancellationStatus.WITHDRAWN
+        pending.resolved_at = timezone.now()
+        pending.resolved_by = buyer.business_name
+        pending.save(update_fields=["status", "resolved_at", "resolved_by", "updated_at"])
+
+        OrderEvent.objects.create(
+            order=order,
+            status=order.order_status,
+            note="Buyer withdrew the cancellation request.",
+            created_by=buyer.business_name,
+        )
+        return Response(OrderSerializer(order).data)
+
+    @action(detail=True, methods=["post"], url_path="cancellation-request/resolve",
+            permission_classes=[IsSupplier])
+    def resolve_cancellation(self, request, pk=None):
+        """Supplier approves or rejects a buyer's cancellation request."""
+        supplier = request.user.supplier_profile
+        order = Order.objects.filter(pk=pk, product__supplier=supplier).first()
+        if not order:
+            return Response({"detail": "Order not found."}, status=404)
+
+        pending = order.open_cancellation_request
+        if not pending:
+            raise ValidationError({"detail": "No cancellation request is open."})
+
+        serializer = CancellationResolveSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        approve = serializer.validated_data["approve"]
+        note = serializer.validated_data.get("note", "")
+
+        with transaction.atomic():
+            pending.status = (
+                CancellationStatus.APPROVED if approve else CancellationStatus.REJECTED
+            )
+            pending.response_note = note
+            pending.resolved_by = supplier.business_name
+            pending.resolved_at = timezone.now()
+            pending.save(
+                update_fields=[
+                    "status", "response_note", "resolved_by", "resolved_at", "updated_at",
+                ]
+            )
+
+            if approve:
+                # Approved on the buyer's behalf, so it does not count against
+                # their monthly quota -- the supplier agreed it was reasonable.
+                _cancel_order(
+                    order,
+                    by_buyer=False,
+                    reason=pending.reason,
+                    actor=supplier.business_name,
+                    note=note or "Cancellation request approved by supplier.",
+                )
+            else:
+                OrderEvent.objects.create(
+                    order=order,
+                    status=order.order_status,
+                    note=note or "Supplier declined the cancellation request.",
+                    created_by=supplier.business_name,
+                )
+
+        return Response(OrderSerializer(order).data)
+
+    @action(detail=False, methods=["get"], url_path="cancellation-requests",
+            permission_classes=[IsSupplier])
+    def cancellation_queue(self, request):
+        """Every cancellation request raised against this supplier's orders."""
+        qs = CancellationRequest.objects.filter(
+            order__product__supplier=request.user.supplier_profile
+        ).select_related("order", "order__buyer", "order__product")
+
+        if request.query_params.get("status"):
+            qs = qs.filter(status__in=request.query_params["status"].split(","))
+        return Response(CancellationRequestSerializer(qs, many=True).data)
 
     @action(detail=True, methods=["post"], permission_classes=[IsBuyer])
     def review(self, request, pk=None):
@@ -492,9 +733,27 @@ def supplier_dashboard(request):
     orders = Order.objects.filter(product__supplier=supplier)
     products = Product.objects.filter(supplier=supplier)
 
-    revenue = orders.filter(
-        payment_status__in=[PaymentStatus.PAID]
-    ).aggregate(total=Sum("total_price"))["total"] or Decimal("0")
+    # Earnings only count orders that actually completed and were paid for.
+    earned = orders.filter(
+        payment_status=PaymentStatus.PAID
+    ).exclude(order_status=OrderStatus.CANCELLED)
+
+    totals = earned.aggregate(
+        gross=Sum("total_price"),
+        commission=Sum("platform_commission"),
+        payout=Sum("supplier_payout"),
+    )
+    gross = totals["gross"] or Decimal("0")
+    commission = totals["commission"] or Decimal("0")
+    payout = totals["payout"] or Decimal("0")
+
+    # Current calendar month, which is the billing period for commission.
+    now = timezone.now()
+    month = earned.filter(created_at__year=now.year, created_at__month=now.month).aggregate(
+        gross=Sum("total_price"),
+        commission=Sum("platform_commission"),
+        payout=Sum("supplier_payout"),
+    )
 
     return Response(
         {
@@ -509,13 +768,68 @@ def supplier_dashboard(request):
                 order_status__in=[OrderStatus.DISPATCHED, OrderStatus.IN_TRANSIT]
             ).count(),
             "delivered": orders.filter(order_status=OrderStatus.DELIVERED).count(),
-            "revenue_bdt": str(revenue),
+            "open_cancellation_requests": CancellationRequest.objects.filter(
+                order__product__supplier=supplier, status=CancellationStatus.PENDING
+            ).count(),
+            "revenue_bdt": str(gross),
+            "commission_bdt": str(commission),
+            "net_payout_bdt": str(payout),
+            "commission_rate": str(settings.PLATFORM_COMMISSION_RATE),
+            "this_month": {
+                "gross_bdt": str(month["gross"] or Decimal("0")),
+                "commission_bdt": str(month["commission"] or Decimal("0")),
+                "net_payout_bdt": str(month["payout"] or Decimal("0")),
+                "label": now.strftime("%B %Y"),
+            },
             "rating": supplier.rating,
             "verification_status": supplier.verification_status,
             "low_stock": ProductSerializer(
                 products.filter(is_active=True).order_by("available_quantity")[:5],
                 many=True,
             ).data,
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsSupplier])
+def supplier_earnings(request):
+    """Month-by-month statement: gross, platform commission, net payout."""
+    supplier = request.user.supplier_profile
+    rows = (
+        Order.objects.filter(
+            product__supplier=supplier, payment_status=PaymentStatus.PAID
+        )
+        .exclude(order_status=OrderStatus.CANCELLED)
+        .annotate(month=TruncMonth("created_at"))
+        .values("month")
+        .annotate(
+            orders=Count("id"),
+            gross=Sum("total_price"),
+            commission=Sum("platform_commission"),
+            payout=Sum("supplier_payout"),
+            units=Sum("ordered_quantity"),
+        )
+        .order_by("-month")
+    )
+
+    statement = [
+        {
+            "month": row["month"].strftime("%Y-%m"),
+            "label": row["month"].strftime("%B %Y"),
+            "orders": row["orders"],
+            "units": row["units"] or 0,
+            "gross_bdt": str(row["gross"] or Decimal("0")),
+            "commission_bdt": str(row["commission"] or Decimal("0")),
+            "net_payout_bdt": str(row["payout"] or Decimal("0")),
+        }
+        for row in rows
+    ]
+
+    return Response(
+        {
+            "commission_rate": str(settings.PLATFORM_COMMISSION_RATE),
+            "months": statement,
         }
     )
 
@@ -540,7 +854,16 @@ def buyer_dashboard(request):
             "units_bought": orders.exclude(
                 order_status=OrderStatus.CANCELLED
             ).aggregate(n=Sum("ordered_quantity"))["n"] or 0,
+            "express_orders": orders.filter(
+                delivery_speed=DeliverySpeed.EXPRESS
+            ).count(),
             "verification_status": buyer.verification_status,
+            "has_identity_documents": buyer.has_identity_documents,
+            "remaining_self_cancels": buyer.remaining_self_cancels(),
+            "self_cancel_limit": SELF_CANCEL_LIMIT_PER_MONTH,
+            "open_cancellation_requests": CancellationRequest.objects.filter(
+                order__buyer=buyer, status=CancellationStatus.PENDING
+            ).count(),
         }
     )
 

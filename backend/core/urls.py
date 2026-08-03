@@ -16,6 +16,7 @@ urlpatterns = [
     path("profiles/supplier/", views.SupplierProfileView.as_view(), name="supplier-profile"),
     path("suppliers/<uuid:supplier_id>/", views.supplier_public, name="supplier-public"),
     path("dashboard/supplier/", views.supplier_dashboard, name="supplier-dashboard"),
+    path("dashboard/supplier/earnings/", views.supplier_earnings, name="supplier-earnings"),
     path("dashboard/buyer/", views.buyer_dashboard, name="buyer-dashboard"),
     path("uploads/", views.UploadView.as_view(), name="upload"),
     path("", include(router.urls)),

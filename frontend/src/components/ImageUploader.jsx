@@ -51,7 +51,7 @@ export default function ImageUploader({ value = [], onChange, max = 6, folder = 
           <div key={url} className="relative border-[3px] border-ink shadow-pixel-sm">
             <PixelImage src={url} alt={`Photo ${index + 1}`} className="aspect-square w-full" />
             {index === 0 && (
-              <span className="absolute left-0 top-0 border-b-2 border-r-2 border-ink bg-retro-yellow px-1.5 py-0.5 font-pixel text-[7px] uppercase">
+              <span className="absolute left-0 top-0 border-b-2 border-r-2 border-ink bg-retro-yellow px-1.5 py-0.5 eyebrow">
                 Cover
               </span>
             )}
@@ -72,7 +72,7 @@ export default function ImageUploader({ value = [], onChange, max = 6, folder = 
             onClick={() => inputRef.current?.click()}
             disabled={busy}
             className={cx(
-              'grid aspect-square place-items-center border-[3px] border-dashed border-ink bg-parchment font-pixel text-[8px] uppercase tracking-wider text-slate transition-colors hover:bg-retro-yellow',
+              'grid aspect-square place-items-center border-[3px] border-dashed border-ink bg-parchment eyebrow text-slate transition-colors hover:bg-retro-yellow',
               busy && 'cursor-wait opacity-60',
             )}
           >
