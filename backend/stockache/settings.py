@@ -1,5 +1,6 @@
 """Django settings for the StockAche prototype."""
 
+from decimal import Decimal
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -162,9 +163,13 @@ SUPABASE_STORAGE_BUCKET = env("SUPABASE_STORAGE_BUCKET", "stocklot-images")
 SUPABASE_JWT_SECRET = env("SUPABASE_JWT_SECRET")
 
 
-# --- Prototype flags ----------------------------------------------------
+# --- Marketplace economics ----------------------------------------------
+# Commission the platform takes on the goods subtotal of every order.
+# Stored per order at purchase time, so changing this never rewrites history.
+PLATFORM_COMMISSION_RATE = Decimal(env("PLATFORM_COMMISSION_RATE", "0.02"))
+
 ENABLE_DEV_LOGIN = env_bool("ENABLE_DEV_LOGIN", False)
-PAYMENT_MODE = env("PAYMENT_MODE", "mock")
+PAYMENT_MODE = env("PAYMENT_MODE", "sandbox")
 
 LOGGING = {
     "version": 1,

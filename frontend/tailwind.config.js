@@ -24,9 +24,22 @@ export default {
         },
       },
       fontFamily: {
+        // Press Start 2P carries the 8-bit identity, but it is close to
+        // unreadable below ~11px. It is reserved for headings, buttons and the
+        // logo; everything else -- labels, body copy and all numerals -- uses
+        // Space Grotesk, which keeps the geometric retro feel while staying
+        // legible at small sizes.
         pixel: ['"Press Start 2P"', 'monospace'],
-        term: ['"VT323"', 'monospace'],
         body: ['"Space Grotesk"', 'system-ui', 'sans-serif'],
+        num: ['"Space Grotesk"', 'system-ui', 'sans-serif'],
+      },
+      fontSize: {
+        // Explicit pixel-font ramp, so headings never fall below legibility.
+        'pixel-xs': ['0.6875rem', { lineHeight: '1.8', letterSpacing: '0.02em' }],
+        'pixel-sm': ['0.8125rem', { lineHeight: '1.7', letterSpacing: '0.01em' }],
+        'pixel-md': ['1rem', { lineHeight: '1.6' }],
+        'pixel-lg': ['1.375rem', { lineHeight: '1.5' }],
+        'pixel-xl': ['1.875rem', { lineHeight: '1.45' }],
       },
       boxShadow: {
         pixel: '4px 4px 0 0 #151527',

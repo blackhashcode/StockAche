@@ -10,6 +10,7 @@ import {
   Field,
   Loader,
   Modal,
+  MoneyRow,
   Tag,
   Textarea,
   cx,
@@ -18,6 +19,117 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/api'
 import { bdt, dateTime, paymentColor, pcs, statusColor } from '../lib/format'
+
+/** Asks the supplier to release an order they have already committed to. */
+function CancelRequestModal({ open, order, onClose, onSubmit, busy }) {
+  const [reason, setReason] = useState('')
+
+  useEffect(() => {
+    if (open) setReason('')
+  }, [open])
+
+  return (
+    <Modal open={open} onClose={onClose} title="Request cancellation">
+      <p className="text-base text-slate/85">
+        <strong>{order?.product?.supplier_name}</strong> has already started work on{' '}
+        <strong>{order?.reference}</strong>, so they need to approve this. Explaining why
+        gets it resolved faster.
+      </p>
+
+      <div className="mt-5">
+        <Field
+          label="Why do you need to cancel?"
+          required
+          hint="At least a sentence. The supplier reads this."
+        >
+          <Textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={4}
+            placeholder="e.g. My customer changed the order to 200 GSM, this lot no longer fits."
+            maxLength={1000}
+          />
+        </Field>
+      </div>
+
+      <p className="mt-4 border-2 border-ink bg-parchment p-3 text-sm text-slate/80">
+        Your stock stays reserved until the supplier responds, so nothing is lost if they
+        decline.
+      </p>
+
+      <div className="mt-5 flex gap-3">
+        <Button variant="ghost" className="flex-1" onClick={onClose} disabled={busy}>
+          Keep order
+        </Button>
+        <Button
+          variant="danger"
+          className="flex-1"
+          loading={busy}
+          disabled={reason.trim().length < 10}
+          onClick={() => onSubmit(reason.trim())}
+        >
+          Send request
+        </Button>
+      </div>
+    </Modal>
+  )
+}
+
+/** Status panel for whatever cancellation request exists on this order. */
+function CancellationPanel({ request, onWithdraw, busy }) {
+  if (!request) return null
+
+  const TONE = {
+    pending: 'bg-retro-yellow',
+    approved: 'bg-retro-green',
+    rejected: 'bg-retro-red text-paper',
+    withdrawn: 'bg-retro-grey',
+  }
+
+  return (
+    <Card className={cx('border-l-8', {
+      'border-l-retro-yellow': request.status === 'pending',
+      'border-l-retro-green': request.status === 'approved',
+      'border-l-retro-red': request.status === 'rejected',
+      'border-l-retro-grey': request.status === 'withdrawn',
+    })}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="h-card text-slate">Cancellation Request</p>
+        <Tag color={TONE[request.status]}>{request.status_label}</Tag>
+      </div>
+
+      <p className="mt-3 text-base text-slate/85">
+        <span className="eyebrow block text-slate">Your reason</span>
+        {request.reason}
+      </p>
+
+      {request.response_note && (
+        <p className="mt-3 border-2 border-ink bg-parchment p-3 text-base">
+          <span className="eyebrow block text-slate">Supplier replied</span>
+          {request.response_note}
+        </p>
+      )}
+
+      {request.status === 'pending' && (
+        <>
+          <p className="mt-3 text-sm text-slate/70">
+            Waiting on {request.buyer_business_name ? 'the supplier' : 'a response'}. You can
+            withdraw this while it is still open.
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-4"
+            loading={busy}
+            onClick={onWithdraw}
+          >
+            Withdraw request
+          </Button>
+        </>
+      )}
+    </Card>
+  )
+}
 
 function ReviewModal({ open, onClose, onSubmit, busy }) {
   const [rating, setRating] = useState(5)
@@ -79,6 +191,7 @@ export default function OrderDetail() {
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const [showReview, setShowReview] = useState(false)
+  const [showCancelRequest, setShowCancelRequest] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -109,6 +222,34 @@ export default function OrderDetail() {
     try {
       setOrder(await api.cancelOrder(id))
       toast.success('Order cancelled and stock returned.')
+    } catch (err) {
+      setError(err)
+      // Quota exhausted mid-session: fall through to the request flow.
+      await load()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const requestCancellation = async (reason) => {
+    setBusy(true)
+    try {
+      await api.requestCancellation(id, reason)
+      setShowCancelRequest(false)
+      toast.success('Request sent. The supplier will respond shortly.')
+      await load()
+    } catch (err) {
+      setError(err)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const withdrawCancellation = async () => {
+    setBusy(true)
+    try {
+      setOrder(await api.withdrawCancellation(id))
+      toast.info('Cancellation request withdrawn.')
     } catch (err) {
       setError(err)
     } finally {
@@ -147,7 +288,7 @@ export default function OrderDetail() {
     <div className="mx-auto max-w-5xl px-4 py-8">
       <Link
         to={backLink}
-        className="mb-6 inline-block font-pixel text-[9px] uppercase tracking-wider text-slate hover:text-retro-red"
+        className="mb-6 inline-block eyebrow text-slate hover:text-retro-red"
       >
         ← Back to orders
       </Link>
@@ -156,10 +297,10 @@ export default function OrderDetail() {
 
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="font-pixel text-[9px] uppercase tracking-wider text-slate">
+          <p className="eyebrow text-slate">
             Order Reference
           </p>
-          <h1 className="mt-1 font-pixel text-lg uppercase text-retro-navy">
+          <h1 className="mt-1 h-page text-retro-navy">
             {order.reference}
           </h1>
           <p className="mt-2 text-sm text-slate/70">Placed {dateTime(order.created_at)}</p>
@@ -167,29 +308,47 @@ export default function OrderDetail() {
         <div className="flex flex-wrap gap-2">
           <Tag color={statusColor(order.order_status)}>{order.status_label}</Tag>
           <Tag color={paymentColor(order.payment_status)}>{order.payment_status_label}</Tag>
+          {order.is_express && (
+            <Tag color="bg-retro-orange">⚡ {order.delivery_speed_label}</Tag>
+          )}
         </div>
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_20rem]">
         <div className="space-y-6">
+          {order.is_express && order.promised_delivery_at && (
+            <div className="border-[3px] border-ink bg-retro-orange p-4 shadow-pixel">
+              <p className="eyebrow text-ink/70">Express Guarantee</p>
+              <p className="mt-1.5 text-base font-semibold">
+                Promised by {dateTime(order.promised_delivery_at)}
+              </p>
+            </div>
+          )}
+
           <OrderTracker order={order} />
 
+          <CancellationPanel
+            request={order.cancellation_request}
+            busy={busy}
+            onWithdraw={withdrawCancellation}
+          />
+
           <Card>
-            <p className="font-pixel text-[10px] uppercase tracking-wider text-slate">
+            <p className="h-card text-slate">
               Delivery Details
             </p>
-            <div className="mt-4 space-y-3 text-sm">
+            <div className="mt-4 space-y-3 text-base">
               <div>
-                <p className="font-pixel text-[8px] uppercase text-slate">Address</p>
+                <p className="eyebrow text-slate">Address</p>
                 <p className="mt-1 whitespace-pre-line">{order.delivery_address}</p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <p className="font-pixel text-[8px] uppercase text-slate">District</p>
+                  <p className="eyebrow text-slate">District</p>
                   <p className="mt-1">{order.delivery_district || '—'}</p>
                 </div>
                 <div>
-                  <p className="font-pixel text-[8px] uppercase text-slate">Contact</p>
+                  <p className="eyebrow text-slate">Contact</p>
                   <p className="mt-1">
                     {order.contact_person} · {order.contact_phone}
                   </p>
@@ -197,7 +356,7 @@ export default function OrderDetail() {
               </div>
               {order.notes && (
                 <div>
-                  <p className="font-pixel text-[8px] uppercase text-slate">Notes</p>
+                  <p className="eyebrow text-slate">Notes</p>
                   <p className="mt-1 text-slate/85">{order.notes}</p>
                 </div>
               )}
@@ -206,7 +365,7 @@ export default function OrderDetail() {
 
           {order.buyer_rating && (
             <Card className="border-l-8 border-l-retro-yellow">
-              <p className="font-pixel text-[10px] uppercase tracking-wider text-slate">
+              <p className="h-card text-slate">
                 Your Review
               </p>
               <p className="mt-2 text-2xl leading-none text-retro-orange">
@@ -222,7 +381,7 @@ export default function OrderDetail() {
 
         <aside className="space-y-6">
           <Card>
-            <p className="font-pixel text-[10px] uppercase tracking-wider text-slate">
+            <p className="h-card text-slate">
               The Lot
             </p>
             <div className="mt-4 flex gap-3">
@@ -243,40 +402,55 @@ export default function OrderDetail() {
               </div>
             </div>
 
-            <div className="mt-4 space-y-2 border-t-2 border-dashed border-ink/25 pt-4 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate/80">Unit price</span>
-                <span className="font-medium">{bdt(order.unit_price_bdt)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate/80">Quantity</span>
-                <span className="font-medium">{pcs(order.ordered_quantity)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate/80">Subtotal</span>
-                <span className="font-medium">{bdt(order.subtotal)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate/80">Transport</span>
-                <span className="font-medium">{bdt(order.transport_cost)}</span>
-              </div>
+            <div className="mt-4 space-y-2.5 border-t-2 border-dashed border-ink/25 pt-4">
+              <MoneyRow label="Unit price" value={bdt(order.unit_price_bdt)} muted />
+              <MoneyRow label="Quantity" value={pcs(order.ordered_quantity)} muted />
+              <MoneyRow label="Subtotal" value={bdt(order.subtotal)} muted />
+              <MoneyRow
+                label="Delivery"
+                value={
+                  Number(order.transport_cost) === 0
+                    ? 'FREE'
+                    : bdt(order.transport_cost)
+                }
+                muted
+              />
+              {Number(order.express_fee) > 0 && (
+                <MoneyRow label="Express surcharge" value={bdt(order.express_fee)} muted />
+              )}
               <div className="flex items-end justify-between border-t-[3px] border-ink pt-3">
-                <span className="font-pixel text-[9px] uppercase">Total</span>
-                <span className="font-term text-3xl leading-none text-retro-red">
+                <span className="h-card">Total</span>
+                <span className="price text-2xl text-retro-red">
                   {bdt(order.total_price)}
                 </span>
               </div>
+
+              {/* Suppliers see what actually reaches them after commission. */}
+              {role === 'supplier' && (
+                <div className="mt-2 space-y-2 border-t-2 border-dashed border-ink/25 pt-3">
+                  <MoneyRow
+                    label={`Platform fee (${(Number(order.commission_rate) * 100).toFixed(0)}%)`}
+                    value={`−${bdt(order.platform_commission)}`}
+                    muted
+                  />
+                  <MoneyRow
+                    label="Your payout"
+                    value={bdt(order.supplier_payout)}
+                    strong
+                  />
+                </div>
+              )}
             </div>
 
             {order.payment_reference && (
-              <p className="mt-3 break-all text-xs text-slate/60">
+              <p className="mt-3 break-all text-sm text-slate/60">
                 Txn: {order.payment_reference}
               </p>
             )}
           </Card>
 
           <Card>
-            <p className="font-pixel text-[10px] uppercase tracking-wider text-slate">
+            <p className="h-card text-slate">
               {role === 'supplier' ? 'Buyer' : 'Supplier'}
             </p>
             <p className="mt-2 text-sm font-bold">
@@ -291,11 +465,45 @@ export default function OrderDetail() {
 
           {role === 'buyer' && (
             <div className="space-y-3">
-              {order.order_status === 'placed' && (
-                <Button variant="danger" className="w-full" loading={busy} onClick={cancel}>
-                  Cancel Order
+              {/* Free self-cancel while the supplier has not committed. */}
+              {order.can_self_cancel && (
+                <>
+                  <Button
+                    variant="danger"
+                    className="w-full"
+                    loading={busy}
+                    onClick={cancel}
+                  >
+                    Cancel Order
+                  </Button>
+                  <p className="text-center text-sm text-slate/70">
+                    Free — the supplier has not confirmed yet.
+                  </p>
+                </>
+              )}
+
+              {/* Past that point, the supplier has to agree. */}
+              {order.needs_cancellation_request && !order.cancellation_request?.status && (
+                <Button
+                  variant="ghost"
+                  className="w-full"
+                  onClick={() => setShowCancelRequest(true)}
+                >
+                  Request Cancellation
                 </Button>
               )}
+              {order.needs_cancellation_request &&
+                order.cancellation_request &&
+                order.cancellation_request.status !== 'pending' && (
+                  <Button
+                    variant="ghost"
+                    className="w-full"
+                    onClick={() => setShowCancelRequest(true)}
+                  >
+                    Request Cancellation Again
+                  </Button>
+                )}
+
               {order.order_status === 'delivered' && !order.buyer_rating && (
                 <Button
                   variant="secondary"
@@ -304,12 +512,6 @@ export default function OrderDetail() {
                 >
                   ★ Rate Supplier
                 </Button>
-              )}
-              {['confirmed', 'dispatched', 'in_transit'].includes(order.order_status) && (
-                <p className="border-2 border-ink bg-parchment p-3 text-xs text-slate/80">
-                  The supplier is handling this order. Contact them directly to change
-                  anything.
-                </p>
               )}
             </div>
           )}
@@ -321,6 +523,13 @@ export default function OrderDetail() {
         busy={busy}
         onClose={() => setShowReview(false)}
         onSubmit={submitReview}
+      />
+      <CancelRequestModal
+        open={showCancelRequest}
+        order={order}
+        busy={busy}
+        onClose={() => setShowCancelRequest(false)}
+        onSubmit={requestCancellation}
       />
     </div>
   )

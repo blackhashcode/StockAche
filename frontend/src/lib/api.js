@@ -109,8 +109,12 @@ export const api = {
   // --- marketplace ---
   products: (params) => request(`/products/${qs(params)}`, { auth: false }),
   product: (id) => request(`/products/${id}/`, { auth: false }),
-  quote: (id, quantity) =>
-    request(`/products/${id}/quote/`, { method: 'POST', body: { quantity }, auth: false }),
+  quote: (id, quantity, deliverySpeed = 'standard') =>
+    request(`/products/${id}/quote/`, {
+      method: 'POST',
+      body: { quantity, delivery_speed: deliverySpeed },
+      auth: false,
+    }),
 
   // --- supplier inventory ---
   myProducts: () => request('/products/mine/'),
@@ -125,12 +129,26 @@ export const api = {
   incomingOrders: (params) => request(`/orders/incoming/${qs(params)}`),
   updateOrderStatus: (id, status, note = '') =>
     request(`/orders/${id}/status/`, { method: 'POST', body: { status, note } }),
-  cancelOrder: (id) => request(`/orders/${id}/cancel/`, { method: 'POST' }),
+  cancelOrder: (id, reason = '') =>
+    request(`/orders/${id}/cancel/`, { method: 'POST', body: { reason } }),
   reviewOrder: (id, rating, review) =>
     request(`/orders/${id}/review/`, { method: 'POST', body: { rating, review } }),
 
+  // --- cancellation requests ---
+  requestCancellation: (id, reason) =>
+    request(`/orders/${id}/cancellation-request/`, { method: 'POST', body: { reason } }),
+  withdrawCancellation: (id) =>
+    request(`/orders/${id}/cancellation-request/withdraw/`, { method: 'POST' }),
+  resolveCancellation: (id, approve, note = '') =>
+    request(`/orders/${id}/cancellation-request/resolve/`, {
+      method: 'POST',
+      body: { approve, note },
+    }),
+  cancellationQueue: (params) => request(`/orders/cancellation-requests/${qs(params)}`),
+
   // --- dashboards ---
   supplierDashboard: () => request('/dashboard/supplier/'),
+  supplierEarnings: () => request('/dashboard/supplier/earnings/'),
   buyerDashboard: () => request('/dashboard/buyer/'),
 
   // --- uploads ---

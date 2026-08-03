@@ -48,13 +48,13 @@ export function ToastProvider({ children }) {
             key={toast.id}
             className={`pointer-events-auto flex animate-pop-in items-start gap-3 border-[3px] border-ink p-3 shadow-pixel ${TONES[toast.tone]}`}
           >
-            <span className="grid h-6 w-6 shrink-0 place-items-center border-2 border-ink bg-paper font-pixel text-[9px] text-ink">
+            <span className="grid h-7 w-7 shrink-0 place-items-center border-2 border-ink bg-paper text-sm font-bold text-ink">
               {ICONS[toast.tone]}
             </span>
-            <p className="flex-1 text-sm leading-snug">{toast.message}</p>
+            <p className="flex-1 text-base leading-snug">{toast.message}</p>
             <button
               onClick={() => dismiss(toast.id)}
-              className="font-pixel text-[10px] leading-none opacity-70 hover:opacity-100"
+              className="font-pixel text-pixel-xs leading-none opacity-70 hover:opacity-100"
               aria-label="Dismiss notification"
             >
               ✕

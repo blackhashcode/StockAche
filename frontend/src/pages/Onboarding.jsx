@@ -68,13 +68,13 @@ export default function Onboarding() {
         {[1, 2].map((n) => (
           <div key={n} className="flex flex-1 items-center gap-3">
             <span
-              className={`grid h-9 w-9 shrink-0 place-items-center border-[3px] border-ink font-pixel text-[10px] ${
+              className={`grid h-9 w-9 shrink-0 place-items-center border-[3px] border-ink font-pixel text-pixel-xs ${
                 step >= n ? 'bg-retro-yellow' : 'bg-paper text-slate/40'
               }`}
             >
               {n}
             </span>
-            <span className="font-pixel text-[8px] uppercase tracking-wider">
+            <span className="eyebrow">
               {n === 1 ? 'Pick Role' : 'Business Details'}
             </span>
             {n === 1 && <span className="h-1 flex-1 border-y-2 border-ink bg-parchment" />}
@@ -86,7 +86,7 @@ export default function Onboarding() {
 
       {step === 1 ? (
         <>
-          <h1 className="font-pixel text-lg uppercase">Welcome{account.full_name ? `, ${account.full_name.split(' ')[0]}` : ''}</h1>
+          <h1 className="h-page">Welcome{account.full_name ? `, ${account.full_name.split(' ')[0]}` : ''}</h1>
           <p className="mt-3 text-sm text-slate/80">
             How will you use StockAche? This decides your dashboard — it can&apos;t be
             changed later on the same account.
@@ -96,7 +96,7 @@ export default function Onboarding() {
             {ROLES.map((option) => (
               <Card key={option.value} className="flex flex-col">
                 <span className={`pixel-tag ${option.color}`}>{option.tagline}</span>
-                <h2 className="mt-4 font-pixel text-xs uppercase leading-relaxed">
+                <h2 className="mt-4 h-section">
                   {option.title}
                 </h2>
                 <ul className="mt-4 flex-1 space-y-2">
@@ -121,7 +121,7 @@ export default function Onboarding() {
         </>
       ) : (
         <>
-          <h1 className="font-pixel text-lg uppercase">
+          <h1 className="h-page">
             {role === 'supplier' ? 'Supplier Details' : 'Business Details'}
           </h1>
           <p className="mt-3 text-sm text-slate/80">

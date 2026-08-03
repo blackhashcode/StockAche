@@ -67,7 +67,7 @@ export default function SupplierListings() {
     <div className="mx-auto max-w-6xl px-4 py-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-pixel text-lg uppercase">
+          <h1 className="h-page">
             <span className="text-retro-red">▸ </span>My Listings
           </h1>
           <p className="mt-2 text-sm text-slate/80">
@@ -126,8 +126,8 @@ export default function SupplierListings() {
                         ['In stock', `${product.available_quantity}`],
                       ].map(([label, value]) => (
                         <div key={label} className="border-2 border-ink bg-parchment p-2">
-                          <p className="font-pixel text-[7px] uppercase text-slate">{label}</p>
-                          <p className="font-term text-xl leading-none">{value}</p>
+                          <p className="eyebrow text-slate">{label}</p>
+                          <p className="price text-xl">{value}</p>
                         </div>
                       ))}
                     </div>

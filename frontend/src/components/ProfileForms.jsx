@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/api'
 import { useMeta } from '../hooks/useMeta'
+import DocumentUpload from './DocumentUpload'
 import { Button, ErrorBanner, Field, Input, Select, Textarea } from './ui'
 
 const BUSINESS_TYPES = [
@@ -31,6 +32,23 @@ function DistrictSelect({ value, onChange, required }) {
   )
 }
 
+/** Shared explainer so both sides see the same reasoning for the NID rule. */
+function IdentityNotice() {
+  return (
+    <div className="border-[3px] border-ink bg-retro-blue p-4 text-paper">
+      <p className="eyebrow text-paper/80">Identity Verification — Required</p>
+      <p className="mt-2 text-base leading-relaxed">
+        Every trader on StockAche is identity-checked. That is what makes it safe to send
+        money to someone you have never met.
+      </p>
+      <p className="mt-2 text-sm text-paper/80">
+        Your NID is seen only by the StockAche review team. Other traders see your business
+        name and district — never your documents or NID number.
+      </p>
+    </div>
+  )
+}
+
 export function BuyerProfileForm({ initial, onSaved, submitLabel = 'Save Profile' }) {
   const [form, setForm] = useState({
     business_name: initial?.business_name || '',
@@ -39,15 +57,23 @@ export function BuyerProfileForm({ initial, onSaved, submitLabel = 'Save Profile
     address: initial?.address || '',
     district: initial?.district || '',
     nid_number: initial?.nid_number || '',
+    nid_document_url: initial?.nid_document_url || '',
+    nid_back_url: initial?.nid_back_url || '',
   })
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
   const toast = useToast()
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
+  const setValue = (key) => (value) => setForm((f) => ({ ...f, [key]: value }))
 
   const submit = async (e) => {
     e.preventDefault()
+    if (!form.nid_document_url) {
+      setError({ message: 'Upload a photo of the front of your NID card to continue.' })
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
     setError(null)
     setSaving(true)
     try {
@@ -56,13 +82,14 @@ export function BuyerProfileForm({ initial, onSaved, submitLabel = 'Save Profile
       onSaved?.(saved)
     } catch (err) {
       setError(err)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <form onSubmit={submit} className="space-y-5">
+    <form onSubmit={submit} className="space-y-6">
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
       <Field label="Business Name" required>
@@ -107,22 +134,42 @@ export function BuyerProfileForm({ initial, onSaved, submitLabel = 'Save Profile
         />
       </Field>
 
-      <div className="grid gap-5 sm:grid-cols-2">
-        <DistrictSelect
-          value={form.district}
-          onChange={set('district')}
-        />
+      <DistrictSelect value={form.district} onChange={set('district')} />
+
+      <div className="space-y-5 border-t-[3px] border-dashed border-ink/30 pt-6">
+        <IdentityNotice />
+
         <Field
           label="NID Number"
-          hint="Used to verify your business. Never shown to suppliers."
+          required
+          hint="10, 13 or 17 digits, exactly as printed on the card."
         >
           <Input
             value={form.nid_number}
             onChange={set('nid_number')}
-            placeholder="10 or 17 digit NID"
+            placeholder="1994778865521"
+            inputMode="numeric"
+            required
             maxLength={40}
           />
         </Field>
+
+        <div className="grid gap-5 sm:grid-cols-2">
+          <DocumentUpload
+            label="NID Card — Front"
+            required
+            value={form.nid_document_url}
+            onChange={setValue('nid_document_url')}
+            hint="All four corners visible, text readable."
+            accentColor="bg-retro-green"
+          />
+          <DocumentUpload
+            label="NID Card — Back"
+            value={form.nid_back_url}
+            onChange={setValue('nid_back_url')}
+            hint="Optional, but speeds up review."
+          />
+        </div>
       </div>
 
       <Button type="submit" size="lg" loading={saving}>
@@ -139,7 +186,10 @@ export function SupplierProfileForm({ initial, onSaved, submitLabel = 'Save Prof
     address: initial?.address || '',
     district: initial?.district || '',
     trade_license_number: initial?.trade_license_number || '',
+    trade_license_document_url: initial?.trade_license_document_url || '',
     nid_number: initial?.nid_number || '',
+    nid_document_url: initial?.nid_document_url || '',
+    nid_back_url: initial?.nid_back_url || '',
     about: initial?.about || '',
   })
   const [error, setError] = useState(null)
@@ -147,9 +197,15 @@ export function SupplierProfileForm({ initial, onSaved, submitLabel = 'Save Prof
   const toast = useToast()
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
+  const setValue = (key) => (value) => setForm((f) => ({ ...f, [key]: value }))
 
   const submit = async (e) => {
     e.preventDefault()
+    if (!form.nid_document_url) {
+      setError({ message: 'Upload a photo of the front of your NID card to continue.' })
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
     setError(null)
     setSaving(true)
     try {
@@ -158,13 +214,14 @@ export function SupplierProfileForm({ initial, onSaved, submitLabel = 'Save Prof
       onSaved?.(saved)
     } catch (err) {
       setError(err)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <form onSubmit={submit} className="space-y-5">
+    <form onSubmit={submit} className="space-y-6">
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
       <Field label="Business Name" required>
@@ -199,28 +256,6 @@ export function SupplierProfileForm({ initial, onSaved, submitLabel = 'Save Prof
         />
       </Field>
 
-      <div className="grid gap-5 sm:grid-cols-2">
-        <Field
-          label="Trade License No."
-          hint="Submitting this puts you in the verification queue."
-        >
-          <Input
-            value={form.trade_license_number}
-            onChange={set('trade_license_number')}
-            placeholder="TRAD/DHA/2024/XXXXX"
-            maxLength={60}
-          />
-        </Field>
-        <Field label="NID Number">
-          <Input
-            value={form.nid_number}
-            onChange={set('nid_number')}
-            placeholder="10 or 17 digit NID"
-            maxLength={40}
-          />
-        </Field>
-      </div>
-
       <Field label="About Your Business" hint="Shown on your public supplier page.">
         <Textarea
           value={form.about}
@@ -229,6 +264,67 @@ export function SupplierProfileForm({ initial, onSaved, submitLabel = 'Save Prof
           placeholder="What kind of lots do you usually carry?"
         />
       </Field>
+
+      <div className="space-y-5 border-t-[3px] border-dashed border-ink/30 pt-6">
+        <IdentityNotice />
+
+        <Field
+          label="NID Number"
+          required
+          hint="10, 13 or 17 digits, exactly as printed on the card."
+        >
+          <Input
+            value={form.nid_number}
+            onChange={set('nid_number')}
+            placeholder="1985347765521"
+            inputMode="numeric"
+            required
+            maxLength={40}
+          />
+        </Field>
+
+        <div className="grid gap-5 sm:grid-cols-2">
+          <DocumentUpload
+            label="NID Card — Front"
+            required
+            value={form.nid_document_url}
+            onChange={setValue('nid_document_url')}
+            hint="All four corners visible, text readable."
+            accentColor="bg-retro-green"
+          />
+          <DocumentUpload
+            label="NID Card — Back"
+            value={form.nid_back_url}
+            onChange={setValue('nid_back_url')}
+            hint="Optional, but speeds up review."
+          />
+        </div>
+
+        <div className="border-[3px] border-ink bg-parchment p-4">
+          <p className="eyebrow">Trade Licence — for the Verified badge</p>
+          <p className="mt-2 text-base text-slate/85">
+            Buyers can filter the marketplace to verified suppliers only. Adding a valid
+            trade licence puts you in the review queue for that badge.
+          </p>
+
+          <div className="mt-4 grid gap-5 sm:grid-cols-2">
+            <Field label="Trade Licence Number">
+              <Input
+                value={form.trade_license_number}
+                onChange={set('trade_license_number')}
+                placeholder="TRAD/DHA/2024/XXXXX"
+                maxLength={60}
+              />
+            </Field>
+            <DocumentUpload
+              label="Trade Licence Scan"
+              value={form.trade_license_document_url}
+              onChange={setValue('trade_license_document_url')}
+              accentColor="bg-retro-purple"
+            />
+          </div>
+        </div>
+      </div>
 
       <Button type="submit" size="lg" loading={saving}>
         {submitLabel}

@@ -16,10 +16,14 @@ const VARIANTS = {
   danger: 'bg-retro-red text-paper hover:bg-[#f04a53]',
 }
 
+// Press Start 2P runs small for its point size, so these sit a step above what
+// the same numbers would mean in a normal typeface.
+// Press Start 2P runs small for its point size, so nothing drops below 11px —
+// the size at which its glyphs stop resolving cleanly.
 const SIZES = {
-  sm: 'px-3 py-2 text-[8px]',
-  md: 'px-4 py-3 text-[10px]',
-  lg: 'px-6 py-4 text-xs',
+  sm: 'px-3.5 py-2.5 text-pixel-xs',
+  md: 'px-5 py-3.5 text-pixel-xs',
+  lg: 'px-6 py-4 text-pixel-sm',
 }
 
 export const Button = forwardRef(function Button(
@@ -62,7 +66,7 @@ export function Field({ label, hint, error, required, children }) {
       {children}
       {hint && !error && <p className="mt-1.5 text-xs text-slate/70">{hint}</p>}
       {error && (
-        <p className="mt-1.5 font-pixel text-[8px] uppercase text-retro-red">{error}</p>
+        <p className="mt-1.5 eyebrow text-retro-red">{error}</p>
       )}
     </label>
   )
@@ -88,7 +92,7 @@ export const Select = forwardRef(function Select({ className, children, ...props
 export function SectionTitle({ children, right, className }) {
   return (
     <div className={cx('mb-4 flex items-end justify-between gap-4', className)}>
-      <h2 className="font-pixel text-sm uppercase tracking-wide text-ink">
+      <h2 className="h-section text-ink">
         <span className="text-retro-red">▸ </span>
         {children}
       </h2>
@@ -109,7 +113,7 @@ export function Loader({ label = 'Loading' }) {
           />
         ))}
       </div>
-      <p className="font-pixel text-[10px] uppercase tracking-wider text-slate">
+      <p className="h-card text-slate">
         {label}
         <span className="animate-blink">...</span>
       </p>
@@ -123,8 +127,8 @@ export function EmptyState({ icon = '▨', title, message, action }) {
       <div className="grid h-16 w-16 place-items-center border-[3px] border-ink bg-parchment text-3xl">
         {icon}
       </div>
-      <h3 className="font-pixel text-xs uppercase tracking-wide">{title}</h3>
-      {message && <p className="max-w-md text-sm text-slate/80">{message}</p>}
+      <h3 className="h-section">{title}</h3>
+      {message && <p className="max-w-md text-base text-slate/80">{message}</p>}
       {action}
     </div>
   )
@@ -137,7 +141,7 @@ export function ErrorBanner({ error, onDismiss }) {
     <div className="mb-4 border-[3px] border-ink bg-retro-red p-4 text-paper shadow-pixel">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="font-pixel text-[10px] uppercase tracking-wider">! Error</p>
+          <p className="h-card">! Error</p>
           <ul className="mt-2 space-y-1 text-sm">
             {lines.map((line, i) => (
               <li key={i}>{line}</li>
@@ -171,7 +175,7 @@ export function Modal({ open, onClose, title, children, maxWidth = 'max-w-lg' })
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b-[3px] border-ink bg-ink px-5 py-3">
-          <h3 className="font-pixel text-[10px] uppercase tracking-wider text-paper">
+          <h3 className="h-card text-paper">
             {title}
           </h3>
           <button
@@ -193,12 +197,56 @@ export function Stat({ label, value, sub, color = 'bg-retro-yellow' }) {
   return (
     <div className="pixel-box p-4">
       <div className={cx('mb-3 h-2 w-10 border-2 border-ink', color)} />
-      <p className="font-term text-3xl leading-none">{value}</p>
-      <p className="mt-2 font-pixel text-[8px] uppercase tracking-wider text-slate">
-        {label}
-      </p>
-      {sub && <p className="mt-1 text-xs text-slate/70">{sub}</p>}
+      <p className="stat-value">{value}</p>
+      <p className="mt-2 eyebrow text-slate">{label}</p>
+      {sub && <p className="mt-1 text-sm text-slate/70">{sub}</p>}
     </div>
+  )
+}
+
+/** Labelled money row, right-aligned, used in every cost breakdown. */
+export function MoneyRow({ label, value, muted, strong, accent }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4">
+      <span className={cx('text-sm', muted ? 'text-slate/70' : 'text-slate')}>
+        {label}
+      </span>
+      <span
+        className={cx(
+          'price',
+          strong ? 'text-xl' : 'text-base',
+          accent ? 'text-retro-red' : 'text-ink',
+        )}
+      >
+        {value}
+      </span>
+    </div>
+  )
+}
+
+/** Checkbox styled to match the chunky border language. */
+export function Checkbox({ checked, onChange, label, hint, disabled }) {
+  return (
+    <label
+      className={cx(
+        'flex cursor-pointer items-start gap-3 border-[3px] border-ink bg-parchment p-3.5',
+        disabled && 'cursor-not-allowed opacity-60',
+      )}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        disabled={disabled}
+        className="mt-0.5 h-5 w-5 shrink-0 accent-retro-green"
+      />
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold uppercase tracking-[0.08em]">
+          {label}
+        </span>
+        {hint && <span className="mt-1 block text-sm text-slate/75">{hint}</span>}
+      </span>
+    </label>
   )
 }
 

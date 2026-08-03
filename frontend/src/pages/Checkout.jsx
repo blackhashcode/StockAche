@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
+import { BkashFlow, CardFlow } from '../components/PaymentFlow'
 import PixelImage from '../components/PixelImage'
 import {
   Button,
@@ -9,8 +10,9 @@ import {
   Field,
   Input,
   Loader,
-  Modal,
+  MoneyRow,
   Select,
+  Tag,
   Textarea,
   cx,
 } from '../components/ui'
@@ -24,71 +26,25 @@ const PAYMENT_OPTIONS = [
   {
     value: 'bkash',
     label: 'bKash',
-    blurb: 'Pay now from your bKash wallet',
+    blurb: 'Pay now from your wallet',
     color: 'bg-retro-pink',
     icon: 'b',
   },
   {
     value: 'card',
     label: 'Card',
-    blurb: 'Visa / Mastercard, paid up front',
+    blurb: 'Visa or Mastercard',
     color: 'bg-retro-blue',
     icon: '▦',
   },
   {
     value: 'cod',
     label: 'Cash on Delivery',
-    blurb: 'Pay the driver when the lot arrives',
+    blurb: 'Pay the driver on arrival',
     color: 'bg-retro-green',
     icon: '৳',
   },
 ]
-
-/** Fake bKash confirmation so the demo shows a realistic wallet step. */
-function BkashModal({ open, amount, onClose, onConfirm, busy }) {
-  const [pin, setPin] = useState('')
-  return (
-    <Modal open={open} onClose={busy ? () => {} : onClose} title="bKash — Mock Payment">
-      <div className="border-[3px] border-ink bg-retro-pink p-4 text-center">
-        <p className="font-pixel text-[9px] uppercase tracking-wider">Amount</p>
-        <p className="mt-2 font-term text-4xl leading-none">{bdt(amount)}</p>
-      </div>
-
-      <p className="mt-4 text-sm text-slate/85">
-        This is a simulated gateway. Enter any 4 digits to approve — no real transaction is
-        made and no credentials are sent anywhere.
-      </p>
-
-      <div className="mt-4">
-        <Field label="Wallet PIN (any 4 digits)">
-          <Input
-            type="text"
-            inputMode="numeric"
-            maxLength={4}
-            value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-            placeholder="••••"
-            className="text-center font-term text-3xl tracking-[0.5em]"
-          />
-        </Field>
-      </div>
-
-      <div className="mt-5 flex gap-3">
-        <Button variant="ghost" className="flex-1" onClick={onClose} disabled={busy}>
-          Cancel
-        </Button>
-        <Button
-          className="flex-1"
-          onClick={onConfirm}
-          disabled={pin.length !== 4}
-          loading={busy}
-        >
-          Approve
-        </Button>
-      </div>
-    </Modal>
-  )
-}
 
 export default function Checkout() {
   const { productId } = useParams()
@@ -102,10 +58,11 @@ export default function Checkout() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [placing, setPlacing] = useState(false)
-  const [showBkash, setShowBkash] = useState(false)
+  const [gateway, setGateway] = useState(null)
 
   const [form, setForm] = useState({
     ordered_quantity: searchParams.get('qty') || '',
+    delivery_speed: searchParams.get('speed') === 'express' ? 'express' : 'standard',
     payment_method: 'bkash',
     delivery_address: '',
     delivery_district: '',
@@ -124,6 +81,8 @@ export default function Checkout() {
         setForm((f) => ({
           ...f,
           ordered_quantity: f.ordered_quantity || String(data.moq),
+          // Fall back to standard if the listing does not offer express.
+          delivery_speed: data.express_delivery_available ? f.delivery_speed : 'standard',
         }))
       })
       .catch((err) => !cancelled && setError(err))
@@ -133,7 +92,6 @@ export default function Checkout() {
     }
   }, [productId])
 
-  // Prefill delivery details from the buyer's saved profile.
   useEffect(() => {
     if (!buyerProfile) return
     setForm((f) => ({
@@ -150,7 +108,11 @@ export default function Checkout() {
   const qty = Number(form.ordered_quantity) || 0
   const subtotal = product ? qty * Number(product.unit_price_bdt) : 0
   const transport = product ? Number(product.estimated_transport_cost) : 0
-  const total = subtotal + transport
+  const expressFee =
+    product && form.delivery_speed === 'express' && product.express_delivery_available
+      ? Number(product.express_delivery_fee)
+      : 0
+  const total = subtotal + transport + expressFee
 
   const submitOrder = async () => {
     setError(null)
@@ -160,18 +122,20 @@ export default function Checkout() {
         product_id: productId,
         ordered_quantity: qty,
         payment_method: form.payment_method,
+        delivery_speed: form.delivery_speed,
         delivery_address: form.delivery_address,
         delivery_district: form.delivery_district,
         contact_person: form.contact_person,
         contact_phone: form.contact_phone,
         notes: form.notes,
       })
-      setShowBkash(false)
+      setGateway(null)
       toast.success(`Order ${order.reference} placed.`)
       navigate(`/orders/${order.id}`, { replace: true })
     } catch (err) {
       setError(err)
-      setShowBkash(false)
+      setGateway(null)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     } finally {
       setPlacing(false)
     }
@@ -184,9 +148,10 @@ export default function Checkout() {
       setError({ message: `Minimum order quantity is ${pcs(product.moq)}.` })
       return
     }
-    // bKash gets an extra confirmation step; card/COD post straight through.
-    if (form.payment_method === 'bkash') setShowBkash(true)
-    else submitOrder()
+    // Wallet and card both walk through their gateway journey first; cash on
+    // delivery has nothing to authorise, so it posts straight through.
+    if (form.payment_method === 'cod') submitOrder()
+    else setGateway(form.payment_method)
   }
 
   if (loading) return <Loader label="Preparing checkout" />
@@ -203,11 +168,11 @@ export default function Checkout() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
-      <h1 className="font-pixel text-lg uppercase">
+      <h1 className="h-page">
         <span className="text-retro-red">▸ </span>Checkout
       </h1>
-      <p className="mt-2 text-sm text-slate/80">
-        Confirm the quantity, where it&apos;s going, and how you&apos;re paying.
+      <p className="mt-3 text-base text-slate/85">
+        Confirm the quantity, where it is going, and how you are paying.
       </p>
 
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
@@ -216,9 +181,7 @@ export default function Checkout() {
         <div className="space-y-6">
           {/* Quantity */}
           <Card>
-            <p className="font-pixel text-[10px] uppercase tracking-wider text-slate">
-              1 — Quantity
-            </p>
+            <p className="h-card text-slate">1 — Quantity</p>
             <div className="mt-4 grid gap-5 sm:grid-cols-2">
               <Field
                 label="Pieces"
@@ -232,25 +195,90 @@ export default function Checkout() {
                   value={form.ordered_quantity}
                   onChange={set('ordered_quantity')}
                   required
-                  className="font-term text-2xl"
+                  className="price text-xl"
                 />
               </Field>
-              <div className="self-end border-[3px] border-ink bg-parchment p-3">
-                <p className="font-pixel text-[8px] uppercase tracking-wider text-slate">
-                  Line total
-                </p>
-                <p className="font-term text-3xl leading-none text-retro-red">
-                  {bdt(subtotal)}
-                </p>
+              <div className="self-start border-[3px] border-ink bg-parchment p-4">
+                <p className="eyebrow text-slate">Line total</p>
+                <p className="price mt-1.5 text-2xl text-retro-red">{bdt(subtotal)}</p>
               </div>
             </div>
           </Card>
 
-          {/* Delivery */}
+          {/* Delivery speed */}
           <Card>
-            <p className="font-pixel text-[10px] uppercase tracking-wider text-slate">
-              2 — Delivery
-            </p>
+            <p className="h-card text-slate">2 — Delivery Speed</p>
+            <div className="mt-4 space-y-3">
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, delivery_speed: 'standard' }))}
+                className={cx(
+                  'flex w-full items-center justify-between gap-3 border-[3px] border-ink p-4 text-left transition-transform duration-75',
+                  form.delivery_speed === 'standard'
+                    ? 'translate-x-[2px] translate-y-[2px] bg-ink text-paper shadow-none'
+                    : 'bg-paper shadow-pixel-sm hover:bg-parchment',
+                )}
+              >
+                <span className="min-w-0">
+                  <span className="block text-base font-bold">Standard Delivery</span>
+                  <span
+                    className={cx(
+                      'mt-1 block text-sm',
+                      form.delivery_speed === 'standard'
+                        ? 'text-paper/75'
+                        : 'text-slate/70',
+                    )}
+                  >
+                    Road freight, typically 3–5 days
+                  </span>
+                </span>
+                <span className="price shrink-0 text-lg">
+                  {product.free_delivery ? 'FREE' : bdt(transport)}
+                </span>
+              </button>
+
+              {product.express_delivery_available ? (
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, delivery_speed: 'express' }))}
+                  className={cx(
+                    'flex w-full items-center justify-between gap-3 border-[3px] border-ink p-4 text-left transition-transform duration-75',
+                    form.delivery_speed === 'express'
+                      ? 'translate-x-[2px] translate-y-[2px] bg-retro-orange shadow-none'
+                      : 'bg-paper shadow-pixel-sm hover:bg-parchment',
+                  )}
+                >
+                  <span className="min-w-0">
+                    <span className="block text-base font-bold">
+                      ⚡ Express — {product.express_delivery_hours} hours
+                    </span>
+                    <span
+                      className={cx(
+                        'mt-1 block text-sm',
+                        form.delivery_speed === 'express'
+                          ? 'text-ink/75'
+                          : 'text-slate/70',
+                      )}
+                    >
+                      Guaranteed arrival within {product.express_delivery_hours} hours of
+                      confirmation
+                    </span>
+                  </span>
+                  <span className="price shrink-0 text-lg">
+                    +{bdt(product.express_delivery_fee)}
+                  </span>
+                </button>
+              ) : (
+                <p className="border-2 border-dashed border-ink/40 p-3 text-sm text-slate/70">
+                  This supplier does not offer express delivery on this lot.
+                </p>
+              )}
+            </div>
+          </Card>
+
+          {/* Delivery details */}
+          <Card>
+            <p className="h-card text-slate">3 — Delivery Details</p>
             <div className="mt-4 space-y-5">
               <Field label="Delivery Address" required>
                 <Textarea
@@ -305,9 +333,7 @@ export default function Checkout() {
 
           {/* Payment */}
           <Card>
-            <p className="font-pixel text-[10px] uppercase tracking-wider text-slate">
-              3 — Payment
-            </p>
+            <p className="h-card text-slate">4 — Payment</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
               {PAYMENT_OPTIONS.map((option) => {
                 const active = form.payment_method === option.value
@@ -317,7 +343,7 @@ export default function Checkout() {
                     type="button"
                     onClick={() => setForm((f) => ({ ...f, payment_method: option.value }))}
                     className={cx(
-                      'flex flex-col items-start gap-2 border-[3px] border-ink p-3 text-left transition-transform duration-75',
+                      'flex flex-col items-start gap-2.5 border-[3px] border-ink p-4 text-left transition-transform duration-75',
                       active
                         ? 'translate-x-[2px] translate-y-[2px] bg-ink text-paper shadow-none'
                         : 'bg-paper shadow-pixel-sm hover:bg-parchment',
@@ -325,34 +351,29 @@ export default function Checkout() {
                   >
                     <span
                       className={cx(
-                        'grid h-8 w-8 place-items-center border-2 border-ink font-pixel text-[11px] text-ink',
+                        'grid h-9 w-9 place-items-center border-2 border-ink text-base font-bold text-ink',
                         option.color,
                       )}
                     >
                       {option.icon}
                     </span>
-                    <span className="font-pixel text-[9px] uppercase">{option.label}</span>
-                    <span className={cx('text-xs', active ? 'text-paper/75' : 'text-slate/70')}>
+                    <span className="text-base font-bold">{option.label}</span>
+                    <span
+                      className={cx('text-sm', active ? 'text-paper/75' : 'text-slate/70')}
+                    >
                       {option.blurb}
                     </span>
                   </button>
                 )
               })}
             </div>
-
-            <p className="mt-4 border-2 border-ink bg-retro-yellow p-2 text-xs">
-              ⚠ Prototype: payments run in <strong>mock mode</strong>. No money moves and no
-              card or wallet details are collected.
-            </p>
           </Card>
         </div>
 
         {/* Summary */}
         <aside className="lg:sticky lg:top-32 lg:self-start">
           <Card className="border-t-8 border-t-retro-red">
-            <p className="font-pixel text-[10px] uppercase tracking-wider text-slate">
-              Order Summary
-            </p>
+            <p className="h-card text-slate">Order Summary</p>
 
             <div className="mt-4 flex gap-3 border-b-2 border-dashed border-ink/25 pb-4">
               <PixelImage
@@ -363,60 +384,82 @@ export default function Checkout() {
               />
               <div className="min-w-0">
                 <p className="line-clamp-2 text-sm font-bold leading-snug">{product.title}</p>
-                <p className="mt-1 text-xs text-slate/70">
+                <p className="mt-1 text-sm text-slate/70">
                   {product.supplier.business_name}
                 </p>
               </div>
             </div>
 
-            <div className="mt-4 space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate/80">Unit price</span>
-                <span className="font-medium">{bdt(product.unit_price_bdt)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate/80">Quantity</span>
-                <span className="font-medium">{pcs(qty)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate/80">Subtotal</span>
-                <span className="font-medium">{bdt(subtotal)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate/80">Transport</span>
-                <span className="font-medium">{bdt(transport)}</span>
-              </div>
+            <div className="mt-4 space-y-2.5">
+              <MoneyRow label="Unit price" value={bdt(product.unit_price_bdt)} muted />
+              <MoneyRow label="Quantity" value={pcs(qty)} muted />
+              <MoneyRow label="Subtotal" value={bdt(subtotal)} muted />
+              <MoneyRow
+                label="Delivery"
+                value={product.free_delivery ? 'FREE' : bdt(transport)}
+                muted
+              />
+              {expressFee > 0 && (
+                <MoneyRow
+                  label={`Express (${product.express_delivery_hours}h)`}
+                  value={bdt(expressFee)}
+                  muted
+                />
+              )}
             </div>
 
-            <div className="mt-4 flex items-end justify-between border-t-[3px] border-ink pt-3">
-              <span className="font-pixel text-[10px] uppercase">Total</span>
-              <span className="font-term text-4xl leading-none text-retro-red">
-                {bdt(total)}
-              </span>
+            <div className="mt-4 flex items-end justify-between border-t-[3px] border-ink pt-4">
+              <span className="h-card">Total</span>
+              <span className="price text-3xl text-retro-red">{bdt(total)}</span>
             </div>
+
+            {form.delivery_speed === 'express' && (
+              <div className="mt-4 border-2 border-ink bg-retro-orange p-3">
+                <p className="text-sm font-semibold">
+                  ⚡ Express: arriving within {product.express_delivery_hours} hours of the
+                  supplier confirming.
+                </p>
+              </div>
+            )}
 
             <Button
               type="submit"
               size="lg"
               className="mt-5 w-full"
-              loading={placing && form.payment_method !== 'bkash'}
+              loading={placing && form.payment_method === 'cod'}
               disabled={qty < product.moq}
             >
               {form.payment_method === 'cod' ? 'Place Order' : `Pay ${bdt(total)}`}
             </Button>
 
-            <p className="mt-3 text-center text-xs text-slate/70">
+            <p className="mt-3 text-center text-sm text-slate/70">
               Stock is reserved the moment your order is placed.
             </p>
           </Card>
+
+          <div className="mt-4 flex items-start gap-2.5 border-[3px] border-ink bg-parchment p-3">
+            <Tag color="bg-retro-green">✓</Tag>
+            <p className="text-sm text-slate/80">
+              Cancel free of charge any time before the supplier confirms.
+            </p>
+          </div>
         </aside>
       </form>
 
-      <BkashModal
-        open={showBkash}
+      <BkashFlow
+        open={gateway === 'bkash'}
         amount={total}
-        busy={placing}
-        onClose={() => setShowBkash(false)}
+        reference={product.id.slice(0, 8).toUpperCase()}
+        submitting={placing}
+        onClose={() => setGateway(null)}
+        onConfirm={submitOrder}
+      />
+      <CardFlow
+        open={gateway === 'card'}
+        amount={total}
+        reference={product.id.slice(0, 8).toUpperCase()}
+        submitting={placing}
+        onClose={() => setGateway(null)}
         onConfirm={submitOrder}
       />
     </div>
