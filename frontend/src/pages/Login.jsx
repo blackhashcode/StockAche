@@ -91,6 +91,7 @@ export default function Login() {
     isOnboarded,
     googleEnabled,
     loading,
+    authError,
   } = useAuth()
 
   const [mode, setMode] = useState('signin')
@@ -109,8 +110,23 @@ export default function Login() {
 
   useEffect(() => {
     const fromUrl = readAuthErrorFromUrl()
-    if (fromUrl) setError(fromUrl)
-  }, [])
+    if (fromUrl) {
+      setError(fromUrl)
+      return
+    }
+    // Bounced back here from /auth/callback: the provider handshake succeeded
+    // but our own API would not accept the session. Say so rather than looking
+    // like the sign-in simply did nothing.
+    if (location.state?.callbackFailed) {
+      setError(
+        authError ||
+          new Error(
+            'Sign-in completed with the provider, but the StockAche server did not ' +
+              'accept the session. Check that the Django backend is running on port 8000.',
+          ),
+      )
+    }
+  }, [location.state, authError])
 
   if (loading) return <Loader label="Checking session" />
 
