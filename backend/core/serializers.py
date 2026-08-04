@@ -211,6 +211,7 @@ class ProductSerializer(serializers.ModelSerializer):
     category_label = serializers.CharField(source="get_category_display", read_only=True)
     thumbnail = serializers.CharField(read_only=True)
     in_stock = serializers.BooleanField(read_only=True)
+    is_sold_out = serializers.BooleanField(read_only=True)
     total_at_moq = serializers.SerializerMethodField()
 
     class Meta:
@@ -239,6 +240,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "location",
             "is_active",
             "in_stock",
+            "is_sold_out",
             "total_at_moq",
             "created_at",
         ]
@@ -436,6 +438,18 @@ class OrderCreateSerializer(serializers.Serializer):
             )
         except Product.DoesNotExist:
             raise serializers.ValidationError({"product_id": "Listing not found."})
+
+        # Checked before the quantity rules so a sold-out lot says so plainly
+        # rather than complaining about the number the buyer typed.
+        if product.is_sold_out:
+            raise serializers.ValidationError(
+                {
+                    "detail": (
+                        "This lot is sold out. The supplier may restock it — "
+                        "check back later."
+                    )
+                }
+            )
 
         qty = attrs["ordered_quantity"]
         if qty < product.moq:
