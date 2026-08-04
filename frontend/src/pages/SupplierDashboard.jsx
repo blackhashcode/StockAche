@@ -105,7 +105,11 @@ export default function SupplierDashboard() {
             <Stat
               label="Active Listings"
               value={stats.active_listings}
-              sub={`${stats.total_listings} total`}
+              sub={
+                stats.sold_out_listings > 0
+                  ? `${stats.sold_out_listings} sold out — restock to sell`
+                  : `${stats.total_listings} total`
+              }
               color="bg-retro-blue"
             />
             <Stat

@@ -32,6 +32,7 @@ const EMPTY_FILTERS = {
   price_max: '',
   district: '',
   verified_only: '',
+  in_stock: '',
   ordering: '-created_at',
 }
 
@@ -239,18 +240,28 @@ export default function Marketplace() {
         </Select>
       </div>
 
-      {/* Verified */}
-      <label className="flex cursor-pointer items-center gap-3 border-[3px] border-ink bg-parchment p-3">
-        <input
-          type="checkbox"
-          checked={filters.verified_only === 'true'}
-          onChange={(e) => update({ verified_only: e.target.checked ? 'true' : '' })}
-          className="h-5 w-5 shrink-0 accent-retro-green"
-        />
-        <span className="eyebrow">
-          Verified suppliers only
-        </span>
-      </label>
+      {/* Availability & verification */}
+      <div className="space-y-2">
+        <label className="flex cursor-pointer items-center gap-3 border-[3px] border-ink bg-parchment p-3">
+          <input
+            type="checkbox"
+            checked={filters.in_stock === 'true'}
+            onChange={(e) => update({ in_stock: e.target.checked ? 'true' : '' })}
+            className="h-5 w-5 shrink-0 accent-retro-green"
+          />
+          <span className="eyebrow">Hide sold-out lots</span>
+        </label>
+
+        <label className="flex cursor-pointer items-center gap-3 border-[3px] border-ink bg-parchment p-3">
+          <input
+            type="checkbox"
+            checked={filters.verified_only === 'true'}
+            onChange={(e) => update({ verified_only: e.target.checked ? 'true' : '' })}
+            className="h-5 w-5 shrink-0 accent-retro-green"
+          />
+          <span className="eyebrow">Verified suppliers only</span>
+        </label>
+      </div>
 
       {activeCount > 0 && (
         <Button variant="dark" className="w-full" onClick={clearAll}>
@@ -266,8 +277,11 @@ export default function Marketplace() {
         <h1 className="h-page">
           <span className="text-retro-red">▸ </span>Stocklot Feed
         </h1>
-        <p className="mt-2 text-sm text-slate/80">
-          {data ? `${data.count} lot${data.count === 1 ? '' : 's'} available` : 'Loading lots…'}
+        <p className="mt-2 text-base text-slate/80">
+          {data
+            ? `${data.count} lot${data.count === 1 ? '' : 's'} found` +
+              (filters.in_stock === 'true' ? ' · in stock only' : '')
+            : 'Loading lots…'}
         </p>
       </div>
 
