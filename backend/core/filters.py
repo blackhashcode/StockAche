@@ -1,4 +1,5 @@
 import django_filters as filters
+from django.db.models import F
 
 from .models import Product
 
@@ -15,11 +16,18 @@ class ProductFilter(filters.FilterSet):
     price_max = filters.NumberFilter(field_name="unit_price_bdt", lookup_expr="lte")
     district = filters.CharFilter(field_name="supplier__district", lookup_expr="iexact")
     verified_only = filters.BooleanFilter(method="filter_verified")
+    in_stock = filters.BooleanFilter(method="filter_in_stock")
     supplier = filters.UUIDFilter(field_name="supplier__id")
 
     class Meta:
         model = Product
         fields = []
+
+    def filter_in_stock(self, queryset, name, value):
+        """Hide lots that cannot currently satisfy their own MOQ."""
+        if value:
+            return queryset.filter(available_quantity__gte=F("moq"))
+        return queryset
 
     def filter_category(self, queryset, name, value):
         """Accepts a single slug or a comma separated list."""

@@ -315,9 +315,23 @@ class Product(TimestampedModel):
     def thumbnail(self) -> str:
         return self.images[0] if self.images else ""
 
+    # `is_active` is the supplier's publish/pause intent and nothing else.
+    # Availability is derived from stock, so a lot that sells out stays
+    # published and simply reports itself as sold out. Conflating the two
+    # previously made sold-out lots vanish for buyers *and* lock their owner
+    # out of the edit page they needed in order to restock.
+    @property
+    def is_sold_out(self) -> bool:
+        return self.available_quantity < self.moq
+
     @property
     def in_stock(self) -> bool:
-        return self.is_active and self.available_quantity >= self.moq
+        return self.is_active and not self.is_sold_out
+
+    @property
+    def max_orderable(self) -> int:
+        """Largest quantity a buyer could take right now."""
+        return 0 if self.is_sold_out else self.available_quantity
 
 
 class Order(TimestampedModel):
