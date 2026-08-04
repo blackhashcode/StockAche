@@ -17,7 +17,9 @@ export function VerifiedBadge({ verified, className = '' }) {
 }
 
 export default function ProductCard({ product }) {
-  const soldOut = !product.in_stock
+  // `is_sold_out` is purely about stock. A lot the supplier paused is not
+  // "sold out", and it never reaches the public feed anyway.
+  const soldOut = product.is_sold_out ?? !product.in_stock
 
   return (
     <Link
@@ -46,10 +48,15 @@ export default function ProductCard({ product }) {
           <Tag color="bg-ink text-paper">{product.gsm} GSM</Tag>
         </div>
         {soldOut && (
-          <div className="absolute inset-0 grid place-items-center bg-ink/70">
-            <span className="border-[3px] border-paper bg-retro-red px-3 py-2 h-card text-paper">
-              Sold Out
-            </span>
+          <div className="absolute inset-0 grid place-items-center bg-ink/75">
+            <div className="text-center">
+              <span className="inline-block border-[3px] border-paper bg-retro-red px-4 py-2.5 h-card text-paper">
+                Sold Out
+              </span>
+              <p className="mt-2 px-3 text-sm font-semibold text-paper/85">
+                Supplier may restock
+              </p>
+            </div>
           </div>
         )}
       </div>

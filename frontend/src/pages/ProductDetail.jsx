@@ -336,7 +336,14 @@ export default function ProductDetail() {
               <SpecRow label="Composition" value={product.fabric_composition} />
               <SpecRow label="Sizes" value={product.sizes_available} />
               <SpecRow label="Colors" value={product.colors} />
-              <SpecRow label="Available" value={pcs(product.available_quantity)} />
+              <SpecRow
+                label="Available"
+                value={
+                  product.is_sold_out
+                    ? `Sold out (${pcs(product.available_quantity)} left, below MOQ)`
+                    : pcs(product.available_quantity)
+                }
+              />
               <SpecRow label="MOQ" value={pcs(product.moq)} />
               <SpecRow label="Unit Price" value={`${bdt(product.unit_price_bdt)} / pc`} />
               <SpecRow
@@ -381,7 +388,10 @@ export default function ProductDetail() {
               {product.express_delivery_available && (
                 <Tag color="bg-retro-orange">⚡ {product.express_delivery_hours}h Express</Tag>
               )}
-              {!product.in_stock && <Tag color="bg-retro-red text-paper">Sold Out</Tag>}
+              {product.is_sold_out && <Tag color="bg-retro-red text-paper">Sold Out</Tag>}
+              {!product.is_sold_out && !product.is_active && (
+                <Tag color="bg-retro-grey">Paused</Tag>
+              )}
             </div>
             <h1 className="mt-4 text-2xl font-bold leading-snug">{product.title}</h1>
             <p className="mt-2 text-base text-slate/80">{product.fabric_composition}</p>
@@ -415,37 +425,74 @@ export default function ProductDetail() {
             )}
           </Card>
 
-          <FeeCalculator
-            product={product}
-            quantity={quantity}
-            setQuantity={setQuantity}
-            speed={speed}
-            setSpeed={setSpeed}
-          />
-
-          {role === 'supplier' ? (
-            <div className="border-[3px] border-ink bg-parchment p-4 text-center">
-              <p className="text-sm text-slate/80">
-                You&apos;re signed in as a supplier. Switch to a buyer account to place orders.
+          {/* A sold-out lot keeps its page and its specs; only the buying
+              controls go away, replaced by an explanation. */}
+          {product.is_sold_out ? (
+            <Card className="border-t-8 border-t-retro-red">
+              <div className="flex items-start gap-3">
+                <span className="grid h-11 w-11 shrink-0 place-items-center border-[3px] border-ink bg-retro-red text-lg text-paper">
+                  ✕
+                </span>
+                <div>
+                  <h2 className="h-card">Sold Out</h2>
+                  <p className="mt-2 text-base leading-relaxed text-slate/85">
+                    Every piece in this lot has been bought. The supplier may restock it,
+                    so it is worth checking back — or browse similar lots below.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Link to={`/marketplace?category=${product.category}&in_stock=true`}>
+                  <Button variant="dark" size="sm">
+                    Similar Lots In Stock
+                  </Button>
+                </Link>
+                <Link to={`/supplier/${product.supplier.id}`}>
+                  <Button variant="ghost" size="sm">
+                    This Supplier&apos;s Other Lots
+                  </Button>
+                </Link>
+              </div>
+            </Card>
+          ) : !product.is_active ? (
+            <Card className="border-t-8 border-t-retro-grey">
+              <h2 className="h-card">Not Currently Listed</h2>
+              <p className="mt-2 text-base leading-relaxed text-slate/85">
+                The supplier has paused this lot, so it cannot be ordered right now.
               </p>
-            </div>
+            </Card>
           ) : (
-            <Button
-              size="lg"
-              className="w-full"
-              disabled={!canOrder || !product.in_stock}
-              onClick={handleOrder}
-            >
-              {!product.in_stock
-                ? 'Sold Out'
-                : !canOrder
-                  ? `Minimum ${pcs(product.moq)}`
-                  : `Order ${pcs(qty)} →`}
-            </Button>
+            <>
+              <FeeCalculator
+                product={product}
+                quantity={quantity}
+                setQuantity={setQuantity}
+                speed={speed}
+                setSpeed={setSpeed}
+              />
+
+              {role === 'supplier' ? (
+                <div className="border-[3px] border-ink bg-parchment p-4 text-center">
+                  <p className="text-base text-slate/80">
+                    You&apos;re signed in as a supplier. Switch to a buyer account to place
+                    orders.
+                  </p>
+                </div>
+              ) : (
+                <Button
+                  size="lg"
+                  className="w-full"
+                  disabled={!canOrder}
+                  onClick={handleOrder}
+                >
+                  {!canOrder ? `Minimum ${pcs(product.moq)}` : `Order ${pcs(qty)} →`}
+                </Button>
+              )}
+            </>
           )}
 
-          {!isAuthenticated && (
-            <p className="text-center text-xs text-slate/70">
+          {!isAuthenticated && product.in_stock && (
+            <p className="text-center text-sm text-slate/70">
               You&apos;ll be asked to sign in before checkout.
             </p>
           )}

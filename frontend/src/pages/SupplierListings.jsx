@@ -15,6 +15,7 @@ import { useToast } from '../context/ToastContext'
 import { api } from '../lib/api'
 import { bdt, pcs, shortDate } from '../lib/format'
 
+
 export default function SupplierListings() {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -63,6 +64,8 @@ export default function SupplierListings() {
 
   if (loading) return <Loader label="Loading listings" />
 
+  const soldOutCount = products.filter((p) => p.is_active && p.is_sold_out).length
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -70,9 +73,15 @@ export default function SupplierListings() {
           <h1 className="h-page">
             <span className="text-retro-red">▸ </span>My Listings
           </h1>
-          <p className="mt-2 text-sm text-slate/80">
+          <p className="mt-2 text-base text-slate/80">
             {products.length} lot{products.length === 1 ? '' : 's'} ·{' '}
-            {products.filter((p) => p.is_active).length} live
+            {products.filter((p) => p.is_active && !p.is_sold_out).length} selling
+            {soldOutCount > 0 && (
+              <span className="font-semibold text-retro-red">
+                {' '}
+                · {soldOutCount} sold out
+              </span>
+            )}
           </p>
         </div>
         <Link to="/supplier/listings/new">
@@ -108,29 +117,56 @@ export default function SupplierListings() {
 
                   <div className="min-w-[14rem] flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Tag color={product.is_active ? 'bg-retro-green' : 'bg-retro-grey'}>
-                        {product.is_active ? 'Live' : 'Paused'}
-                      </Tag>
+                      {/* Sold out and paused are different things: one is
+                          stock, the other is the supplier's own choice. */}
+                      {!product.is_active ? (
+                        <Tag color="bg-retro-grey">Paused</Tag>
+                      ) : product.is_sold_out ? (
+                        <Tag color="bg-retro-red text-paper">Sold Out</Tag>
+                      ) : (
+                        <Tag color="bg-retro-green">Live</Tag>
+                      )}
                       <Tag color="bg-retro-yellow">{product.category_label}</Tag>
                       <Tag color="bg-ink text-paper">{product.gsm} GSM</Tag>
                     </div>
-                    <h2 className="mt-2 text-sm font-bold leading-snug">{product.title}</h2>
-                    <p className="mt-1 text-xs text-slate/70">
+                    <h2 className="mt-2 text-base font-bold leading-snug">{product.title}</h2>
+                    <p className="mt-1 text-sm text-slate/70">
                       {product.fabric_composition} · listed {shortDate(product.created_at)}
                     </p>
 
                     <div className="mt-3 grid max-w-md grid-cols-3 gap-3">
                       {[
-                        ['Unit', bdt(product.unit_price_bdt)],
-                        ['MOQ', `${product.moq}`],
-                        ['In stock', `${product.available_quantity}`],
-                      ].map(([label, value]) => (
-                        <div key={label} className="border-2 border-ink bg-parchment p-2">
-                          <p className="eyebrow text-slate">{label}</p>
+                        ['Unit', bdt(product.unit_price_bdt), false],
+                        ['MOQ', `${product.moq}`, false],
+                        [
+                          'In stock',
+                          `${product.available_quantity}`,
+                          product.is_sold_out,
+                        ],
+                      ].map(([label, value, alert]) => (
+                        <div
+                          key={label}
+                          className={`border-2 border-ink p-2 ${
+                            alert ? 'bg-retro-red text-paper' : 'bg-parchment'
+                          }`}
+                        >
+                          <p className={`eyebrow ${alert ? 'text-paper/80' : 'text-slate'}`}>
+                            {label}
+                          </p>
                           <p className="price text-xl">{value}</p>
                         </div>
                       ))}
                     </div>
+
+                    {product.is_active && product.is_sold_out && (
+                      <div className="mt-3 border-2 border-ink bg-retro-yellow p-3">
+                        <p className="text-sm">
+                          <strong>Sold out.</strong> Buyers can still see this lot, marked
+                          sold out. Edit it and raise the available quantity to at least{' '}
+                          {pcs(product.moq)} to start selling again.
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex shrink-0 flex-col gap-2">

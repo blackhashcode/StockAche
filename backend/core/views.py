@@ -3,7 +3,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Count, Sum
+from django.db.models import Case, Count, F, IntegerField, Q, Sum, Value, When
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -60,12 +60,14 @@ def money(value) -> Decimal:
 
 
 def _release_stock(order) -> None:
-    """Put a cancelled order's quantity back into the lot."""
+    """Put a cancelled order's quantity back into the lot.
+
+    Deliberately does not touch `is_active`: restoring stock must never
+    republish a listing the supplier chose to pause.
+    """
     product = Product.objects.select_for_update().get(pk=order.product_id)
     product.available_quantity += order.ordered_quantity
-    if product.available_quantity >= product.moq:
-        product.is_active = True
-    product.save(update_fields=["available_quantity", "is_active", "updated_at"])
+    product.save(update_fields=["available_quantity", "updated_at"])
 
 
 def _cancel_order(order, *, by_buyer: bool, reason: str, actor: str, note: str = "") -> None:
@@ -295,12 +297,39 @@ class ProductViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = Product.objects.select_related("supplier", "supplier__account")
-        if self.action in ("list", "retrieve"):
-            # Public feed shows live listings only; a supplier still sees their
-            # own drafts through /products/mine/.
-            return qs.filter(is_active=True)
+        # request.user is None for anonymous visitors, so guard the lookup.
         supplier = getattr(self.request.user, "supplier_profile", None)
+
+        if self.action == "list":
+            # Published lots, including sold-out ones. They are badged in the
+            # UI and sorted last rather than hidden, so buyers can tell the
+            # difference between "gone" and "temporarily unavailable".
+            return qs.filter(is_active=True).annotate(
+                sold_out=Case(
+                    When(available_quantity__lt=F("moq"), then=Value(1)),
+                    default=Value(0),
+                    output_field=IntegerField(),
+                )
+            )
+
+        if self.action == "retrieve":
+            # A supplier can always open their own listing, whether paused or
+            # sold out -- otherwise they could never edit it back into stock.
+            if supplier:
+                return qs.filter(Q(is_active=True) | Q(supplier=supplier))
+            return qs.filter(is_active=True)
+
         return qs.filter(supplier=supplier) if supplier else qs.none()
+
+    def filter_queryset(self, queryset):
+        qs = super().filter_queryset(queryset)
+        if self.action != "list":
+            return qs
+        # Whatever sort the buyer picked, sold-out lots sink to the bottom.
+        requested = self.request.query_params.get("ordering") or "-created_at"
+        if requested.lstrip("-") not in self.ordering_fields:
+            requested = "-created_at"
+        return qs.order_by("sold_out", requested)
 
     def get_permissions(self):
         if self.action in ("list", "retrieve", "quote"):
@@ -450,10 +479,11 @@ class OrderViewSet(viewsets.GenericViewSet):
                 notes=data.get("notes", ""),
             )
 
+            # Selling out does not unpublish the lot. It stays listed and
+            # reports itself as sold out, so buyers can see what happened and
+            # the supplier can still open it to restock.
             locked.available_quantity -= qty
-            if locked.available_quantity < locked.moq:
-                locked.is_active = False
-            locked.save(update_fields=["available_quantity", "is_active", "updated_at"])
+            locked.save(update_fields=["available_quantity", "updated_at"])
 
             result = get_provider().charge(
                 method=order.payment_method,
@@ -759,6 +789,9 @@ def supplier_dashboard(request):
         {
             "active_listings": products.filter(is_active=True).count(),
             "total_listings": products.count(),
+            "sold_out_listings": products.filter(
+                is_active=True, available_quantity__lt=F("moq")
+            ).count(),
             "units_in_stock": products.aggregate(n=Sum("available_quantity"))["n"] or 0,
             "total_orders": orders.count(),
             "pending_action": orders.filter(
