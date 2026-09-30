@@ -81,6 +81,11 @@ DATABASE_URL = env("DATABASE_URL")
 
 if DATABASE_URL:
     parsed = urlparse(DATABASE_URL)
+    # Supabase's transaction pooler (port 6543) is what serverless platforms
+    # must use: each invocation is short-lived, so holding connections open
+    # would exhaust the pool. Transaction pooling also cannot support
+    # server-side cursors, which Django uses for .iterator().
+    pooled = parsed.port == 6543 or env_bool("DATABASE_POOLED", False)
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
@@ -90,7 +95,8 @@ if DATABASE_URL:
             "HOST": parsed.hostname or "",
             "PORT": str(parsed.port or 5432),
             "OPTIONS": {"sslmode": "require"},
-            "CONN_MAX_AGE": 60,
+            "CONN_MAX_AGE": 0 if pooled else 60,
+            "DISABLE_SERVER_SIDE_CURSORS": pooled,
         }
     }
 else:
@@ -136,6 +142,20 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 24,
     "UNAUTHENTICATED_USER": None,
 }
+
+if not DEBUG:
+    # JSON only in production. The browsable API needs collected static files,
+    # which a serverless deployment has no good way to serve, and it exposes a
+    # clickable write interface we do not want public either way.
+    REST_FRAMEWORK["DEFAULT_RENDERER_CLASSES"] = [
+        "rest_framework.renderers.JSONRenderer",
+    ]
+
+    # Behind Vercel's proxy, so trust its forwarded scheme for redirects and
+    # secure-cookie decisions.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 
 # --- CORS ---------------------------------------------------------------
