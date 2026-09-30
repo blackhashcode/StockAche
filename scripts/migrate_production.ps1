@@ -119,11 +119,40 @@ try {
     $env:DATABASE_URL = $databaseUrl
     $env:PYTHONIOENCODING = 'utf-8'
 
+    # Check credentials first, so a wrong password produces one clear line
+    # rather than a Django traceback.
+    Write-Host '--- Checking connection ---' -ForegroundColor Cyan
+    & $python (Join-Path $PSScriptRoot '_dbcheck.py')
+    $checkCode = $LASTEXITCODE
+
+    if ($checkCode -eq 2) {
+        Write-Host ''
+        Write-Host 'The database password was not accepted.' -ForegroundColor Red
+        Write-Host ''
+        Write-Host '  This is the database password, which is separate from your'
+        Write-Host '  Supabase account login. It was generated when the project was'
+        Write-Host '  created and is not shown again afterwards.'
+        Write-Host ''
+        Write-Host '  If you do not have it, reset it:' -ForegroundColor Cyan
+        Write-Host '    Supabase -> Settings -> Database -> Database password -> Reset'
+        Write-Host '  Then re-run this script with the new one.'
+        Write-Host ''
+        Write-Host '  Note: the pooler reports the upstream role, so the message says'
+        Write-Host '  user "postgres" even when your username is correct.' -ForegroundColor DarkGray
+        exit 1
+    }
+    if ($checkCode -ne 0) {
+        Write-Host ''
+        Write-Host 'Could not reach the database. Check the host and port above.' -ForegroundColor Red
+        exit 1
+    }
+
     if ($ShowMigrations) {
         & $python $manage showmigrations core
         return
     }
 
+    Write-Host ''
     Write-Host '--- Applying migrations ---' -ForegroundColor Cyan
     & $python $manage migrate
     if ($LASTEXITCODE -ne 0) { throw "migrate failed with exit code $LASTEXITCODE" }
