@@ -56,6 +56,16 @@ See the *Rotating exposed keys* section of `README.md` for the verification curl
 | Running migrations from your laptop | **Session pooler** | `5432` |
 | Vercel runtime (`DATABASE_URL` env var) | **Transaction pooler** | `6543` |
 
+> **Do not use "Direct connection".** Supabase publishes only an IPv6 address
+> for it unless the paid IPv4 add-on is enabled, so on most networks it fails
+> with `could not translate host name ... No such host is known`. Both pooler
+> modes are reachable over IPv4. Tell them apart by shape:
+>
+> | | Username | Host |
+> | --- | --- | --- |
+> | Direct (avoid) | `postgres` | `db.<ref>.supabase.co` |
+> | Pooler (use) | `postgres.<ref>` | `aws-0-<region>.pooler.supabase.com` |
+
 Both look like:
 
 ```
@@ -208,6 +218,7 @@ resolve stuck cancellation requests. Close it and clear `DATABASE_URL` when done
 | `DisallowedHost` error | `DJANGO_ALLOWED_HOSTS` missing `.vercel.app` |
 | API returns 500, frontend loads | Check the function logs in Vercel → Deployments → Functions |
 | `FATAL: too many connections` | `DATABASE_URL` is using port 5432 instead of the 6543 pooler |
+| `could not translate host name ... No such host is known` | Using the Direct connection string, which is IPv6-only. Switch to a pooler string. |
 | Sign-in redirects to a blank page or `localhost` | Step 6 not done |
 | Refreshing `/marketplace` gives 404 | `vercel.json` SPA rewrite missing or Root Directory set wrong |
 | Images fail to upload | `SUPABASE_SERVICE_KEY` wrong, or the old key was revoked without updating Vercel |
