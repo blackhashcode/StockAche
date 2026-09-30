@@ -50,6 +50,28 @@ if (-not $match.Success) {
 
 $prefix = $match.Groups[1].Value
 $suffix = $match.Groups[3].Value
+$hostName = ($suffix -split '[:/]')[0]
+
+# Supabase's direct connection resolves to IPv6 only unless the paid IPv4
+# add-on is enabled, so on most home and campus networks it cannot be reached
+# at all. The pooler is dual-stack. Catch this up front rather than letting it
+# surface as an opaque "No such host is known" from the driver.
+if ($hostName -match '^db\..*\.supabase\.co$') {
+    Write-Host ''
+    Write-Host 'That is the DIRECT connection string, which will not work here.' -ForegroundColor Red
+    Write-Host ''
+    Write-Host '  Supabase publishes only an IPv6 address for direct connections'
+    Write-Host '  unless the IPv4 add-on is purchased. The pooler is reachable over IPv4.'
+    Write-Host ''
+    Write-Host 'In the Supabase Connect dialog, choose Session pooler instead.' -ForegroundColor Cyan
+    Write-Host 'You can tell them apart by shape:' -ForegroundColor Cyan
+    Write-Host ''
+    Write-Host '  direct   postgresql://postgres:<password>@db.<ref>.supabase.co:5432/postgres' -ForegroundColor DarkGray
+    Write-Host '  pooler   postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres' -ForegroundColor Green
+    Write-Host ''
+    Write-Host 'The pooler one has a dot-ref in the username and pooler.supabase.com as the host.'
+    exit 1
+}
 
 if ($suffix -match ':6543') {
     Write-Host ''
@@ -57,6 +79,20 @@ if ($suffix -match ':6543') {
     Write-Host 'Migrations are more reliable on the SESSION pooler (port 5432).' -ForegroundColor Yellow
     $go = Read-Host 'Continue anyway? (y/N)'
     if ($go -ne 'y') { Write-Host 'Aborted.'; exit 1 }
+}
+
+# Fail fast and legibly if the host has no IPv4 route from this machine.
+try {
+    $v4 = Resolve-DnsName -Name $hostName -Type A -ErrorAction Stop |
+          Where-Object { $_.IPAddress } | Select-Object -First 1
+    if (-not $v4) { throw 'no A record' }
+    Write-Host "Resolved $hostName -> $($v4.IPAddress)" -ForegroundColor DarkGray
+}
+catch {
+    Write-Host ''
+    Write-Host "Cannot reach $hostName over IPv4." -ForegroundColor Red
+    Write-Host 'Check the host spelling, or pick the Session pooler in the Connect dialog.'
+    exit 1
 }
 
 $secure = Read-Host 'Database password' -AsSecureString
