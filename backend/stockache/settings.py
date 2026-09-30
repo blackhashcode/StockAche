@@ -2,7 +2,7 @@
 
 from decimal import Decimal
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from dotenv import load_dotenv
 import os
@@ -90,8 +90,11 @@ if DATABASE_URL:
         "default": {
             "ENGINE": "django.db.backends.postgresql",
             "NAME": parsed.path.lstrip("/") or "postgres",
-            "USER": parsed.username or "",
-            "PASSWORD": parsed.password or "",
+            # urlparse leaves credentials percent-encoded, so a password
+            # containing @, # or % would otherwise be sent to Postgres in its
+            # escaped form and fail authentication.
+            "USER": unquote(parsed.username or ""),
+            "PASSWORD": unquote(parsed.password or ""),
             "HOST": parsed.hostname or "",
             "PORT": str(parsed.port or 5432),
             "OPTIONS": {"sslmode": "require"},
