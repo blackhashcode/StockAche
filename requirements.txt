@@ -1,3 +1,0 @@
-# Vercel installs Python dependencies from the repository root.
-# The real list lives with the Django project.
--r backend/requirements.txt

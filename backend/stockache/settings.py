@@ -29,6 +29,12 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", "insecure-prototype-key")
 DEBUG = env_bool("DJANGO_DEBUG", True)
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 
+# Render injects the service's public hostname. Trusting it directly means the
+# deploy works even before DJANGO_ALLOWED_HOSTS is filled in.
+RENDER_EXTERNAL_HOSTNAME = env("RENDER_EXTERNAL_HOSTNAME")
+if RENDER_EXTERNAL_HOSTNAME and RENDER_EXTERNAL_HOSTNAME not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -45,6 +51,9 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Serves the admin's CSS/JS in production; must sit directly after
+    # SecurityMiddleware so it short-circuits before the session machinery.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -125,6 +134,16 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
+# Hashed, compressed static files in production (served by WhiteNoise). Left
+# at Django's default locally so `runserver` works without collectstatic.
+if not DEBUG:
+    STORAGES = {
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        },
+    }
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
@@ -147,24 +166,31 @@ REST_FRAMEWORK = {
 }
 
 if not DEBUG:
-    # JSON only in production. The browsable API needs collected static files,
-    # which a serverless deployment has no good way to serve, and it exposes a
-    # clickable write interface we do not want public either way.
+    # JSON only in production: the browsable API is a clickable write
+    # interface that should not be public.
     REST_FRAMEWORK["DEFAULT_RENDERER_CLASSES"] = [
         "rest_framework.renderers.JSONRenderer",
     ]
 
-    # Behind Vercel's proxy, so trust its forwarded scheme for redirects and
-    # secure-cookie decisions.
+    # The host terminates TLS at its proxy, so trust the forwarded scheme for
+    # redirects and secure-cookie decisions.
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 
 
 # --- CORS ---------------------------------------------------------------
-CORS_ALLOWED_ORIGINS = env_list(
-    "CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
-)
+# The frontend is served from a different origin (Netlify) than the API
+# (Render), so the browser needs an explicit allow-list. Trailing slashes are
+# stripped because django-cors-headers rejects an origin that has a path, and
+# "https://site.netlify.app/" is an easy thing to paste.
+CORS_ALLOWED_ORIGINS = [
+    origin.rstrip("/")
+    for origin in env_list(
+        "CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+    )
+]
+CSRF_TRUSTED_ORIGINS = [origin.rstrip("/") for origin in env_list("CSRF_TRUSTED_ORIGINS")]
 CORS_ALLOW_HEADERS = [
     "accept",
     "accept-encoding",

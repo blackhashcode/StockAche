@@ -9,3 +9,7 @@ requests==2.32.3
 # to compiling from source and fails for want of pg_config. 2.9.13 covers
 # 3.10 - 3.14.
 psycopg2-binary==2.9.13
+
+# Production server and static files (Render).
+gunicorn==26.2.0
+whitenoise==6.12.0
