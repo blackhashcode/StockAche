@@ -1,0 +1,27 @@
+# Netlify serves only the React frontend. The Django API runs on Render.
+#
+# Set these in Netlify -> Site configuration -> Environment variables
+# (they are compiled into the bundle, so a change needs a redeploy):
+#   VITE_SUPABASE_URL      https://uiblezlkmydzndoamvsk.supabase.co
+#   VITE_SUPABASE_ANON_KEY your publishable key
+#   VITE_API_BASE_URL      https://<your-render-service>.onrender.com/api
+
+[build]
+  base = "frontend"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Client-side routes (/marketplace, /orders/...) must all serve index.html,
+# or refreshing any page other than / returns a 404.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

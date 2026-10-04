@@ -1,225 +1,172 @@
-# Deploying StockAche to Vercel
+# Deploying StockAche — Netlify + Render
 
-Frontend and backend run as **one Vercel project on one domain**. The React build
-is served statically; `/api/*` is rewritten to a Python serverless function
-running Django. Because both share an origin, there is no CORS to configure.
+The React frontend runs on **Netlify**. The Django API runs on **Render** as an
+ordinary always-on web server. Supabase provides the database, sign-in and file
+storage, as it does in local development.
 
 ```
-                  https://<your-app>.vercel.app
-                              │
-              ┌───────────────┴────────────────┐
-              │                                │
-      static React build              /api/*  →  api/index.py
-      (frontend/dist)                          (Django + DRF)
-                                                    │
-                                    ┌───────────────┼───────────────┐
-                                    │               │               │
-                            Supabase Postgres  Supabase Auth  Supabase Storage
-                            (transaction pooler)  (Google +      (listing photos,
-                                                  email/password)  NID documents)
+   https://<site>.netlify.app                 https://<service>.onrender.com
+   ┌──────────────────────────┐   HTTPS +     ┌──────────────────────────────┐
+   │  React build (static)    │   Bearer JWT  │  Django + DRF under gunicorn │
+   │  netlify.toml            │ ────────────▶ │  render.yaml                 │
+   └──────────────────────────┘     CORS      └──────────────┬───────────────┘
+                                                             │
+                                ┌────────────────────────────┼─────────────────┐
+                                │                            │                 │
+                       Supabase Postgres              Supabase Auth     Supabase Storage
+                       (session pooler, 5432)         (Google, email)   (photos, NID scans)
 ```
 
-## Already prepared in the repo
+Netlify cannot run Python, so the API has to live elsewhere. Render runs Django
+the same way `runserver` does locally, just under gunicorn: migrations run on
+every deploy and the admin is served at `/admin/`.
+
+## What is already in the repo
 
 | File | Purpose |
 | --- | --- |
-| `vercel.json` | Build command, output directory, `/api/*` rewrite, SPA fallback |
-| `api/index.py` | WSGI entrypoint Vercel invokes; puts `backend/` on the import path |
-| `requirements.txt` (root) | Points Vercel's Python build at `backend/requirements.txt` |
-| `.vercelignore` | Keeps the virtualenv, SQLite file and report assets out of the upload |
-| `settings.py` | Detects the pooler and sets `CONN_MAX_AGE=0` + disables server-side cursors; JSON-only renderers and proxy SSL header when `DEBUG=False` |
+| `render.yaml` | Render Blueprint: build, start command, Python 3.12, all non-secret settings |
+| `netlify.toml` | Netlify build from `frontend/`, Node 20, SPA fallback, asset caching |
+| `backend/requirements.txt` | Adds `gunicorn` (server) and `whitenoise` (admin CSS/JS) |
+| `settings.py` | Trusts Render's hostname, serves static files via WhiteNoise, reads the CORS allow-list from the environment |
 
-Nothing below requires code changes.
+You fill in four secrets in Render and three variables in Netlify. Nothing
+else changes.
 
 ---
 
-## Step 1 — Rotate the Supabase keys (do this first)
+## Order matters
 
-The `service_role` key and secret key were exposed earlier in development and are
-still live. Once deployed they sit in a public-facing service, so rotate before
-going further.
+Each service needs the other's URL, so deploy in this order:
 
-**Supabase → Project Settings → API Keys**
+1. **Render** first, to get the API URL.
+2. **Netlify** next, pointing at that API URL.
+3. **Back to Render**: put the Netlify URL into `CORS_ALLOWED_ORIGINS`.
+4. **Supabase**: allow the Netlify URL for sign-in redirects.
 
-1. Revoke the current secret key, create a new one — this becomes `SUPABASE_SERVICE_KEY`.
-2. Under **Legacy keys**, disable the legacy JWT keys. Revoking the new-format
-   secret alone does not invalidate them; they run to 2036 otherwise.
+---
 
-See the *Rotating exposed keys* section of `README.md` for the verification curl.
+## Step 1 — Render (API)
 
-## Step 2 — Get two connection strings
+1. Sign in at [render.com](https://render.com) with GitHub.
+2. **New → Blueprint**, pick `blackhashcode/StockAche`. Render reads `render.yaml`.
+3. Render asks for the four values marked `sync: false`:
 
-**Supabase → Project Settings → Database → Connection string**
+| Key | Value |
+| --- | --- |
+| `DATABASE_URL` | Supabase **Session pooler** string, port **5432**, with your real password in place of `[YOUR-PASSWORD]` |
+| `SUPABASE_ANON_KEY` | your publishable key (`sb_publishable_…`) |
+| `SUPABASE_SERVICE_KEY` | your secret key (`sb_secret_…`) — ideally a freshly rotated one |
+| `CORS_ALLOWED_ORIGINS` | put `http://localhost:5173` for now; you replace it in step 3 |
 
-| Use | Mode | Port |
-| --- | --- | --- |
-| Running migrations from your laptop | **Session pooler** | `5432` |
-| Vercel runtime (`DATABASE_URL` env var) | **Transaction pooler** | `6543` |
+4. **Apply**. The first build installs dependencies, collects static files and
+   runs migrations (a no-op: the Supabase schema already exists). Takes 3–5 minutes.
+5. Copy the service URL from the top of the page, e.g.
+   `https://stockache-api.onrender.com`.
 
-> **Do not use "Direct connection".** Supabase publishes only an IPv6 address
-> for it unless the paid IPv4 add-on is enabled, so on most networks it fails
-> with `could not translate host name ... No such host is known`. Both pooler
-> modes are reachable over IPv4. Tell them apart by shape:
+Check it:
+
+```
+https://stockache-api.onrender.com/api/meta/
+```
+
+Expect JSON with `"dev_login_enabled": false`.
+
+> **Use the Session pooler, not Direct connection.** Supabase gives the direct
+> host an IPv6 address only, and Render cannot reach it — you'd see
+> `could not translate host name`. The pooler is IPv4. Tell them apart by the
+> username: the pooler one is `postgres.<project-ref>` and the host ends in
+> `pooler.supabase.com`.
 >
-> | | Username | Host |
-> | --- | --- | --- |
-> | Direct (avoid) | `postgres` | `db.<ref>.supabase.co` |
-> | Pooler (use) | `postgres.<ref>` | `aws-0-<region>.pooler.supabase.com` |
+> **Special characters in the password** (`@`, `#`, `%`, `/`) must be
+> percent-encoded inside the URL — `@` becomes `%40`, for example. The app
+> decodes it. `scripts/migrate_production.ps1` does the encoding for you if
+> you'd rather build the string interactively.
 
-Both look like:
+## Step 2 — Netlify (frontend)
+
+1. Sign in at [netlify.com](https://netlify.com) with GitHub.
+2. **Add new site → Import an existing project**, pick `blackhashcode/StockAche`.
+   Netlify reads `netlify.toml`; leave the build settings it shows alone.
+3. Before deploying, open **Environment variables** and add:
+
+| Key | Value |
+| --- | --- |
+| `VITE_SUPABASE_URL` | `https://uiblezlkmydzndoamvsk.supabase.co` |
+| `VITE_SUPABASE_ANON_KEY` | your publishable key |
+| `VITE_API_BASE_URL` | your Render URL **plus `/api`**, e.g. `https://stockache-api.onrender.com/api` |
+
+4. **Deploy**. Takes about a minute. Note the site URL, e.g.
+   `https://stockache.netlify.app` (you can rename it under Site configuration).
+
+`VITE_*` values are compiled into the JavaScript at build time. Changing one
+needs **Deploys → Trigger deploy**, not just a save.
+
+## Step 3 — Allow the frontend to call the API
+
+Render → your service → **Environment** → set:
 
 ```
-postgresql://postgres.uiblezlkmydzndoamvsk:YOUR_DB_PASSWORD@aws-0-<region>.pooler.supabase.com:<port>/postgres
+CORS_ALLOWED_ORIGINS = https://stockache.netlify.app
 ```
 
-Serverless needs the transaction pooler because each request is a fresh, short
-invocation — session-mode connections would pile up and exhaust the pool.
-Migrations want session mode because DDL is happier there.
+Use your actual Netlify URL, with no path. Save; Render redeploys
+automatically. Until this is set, the browser blocks every API call from the
+site, and the marketplace shows a server-unreachable error.
 
-## Step 3 — Create the schema in Postgres
+## Step 4 — Allow sign-in redirects
 
-Run this on your machine with the **5432** string. The password never needs to
-leave your terminal.
+Supabase → **Authentication → URL Configuration**:
 
-```powershell
-$env:DATABASE_URL='postgresql://postgres.uiblezlkmydzndoamvsk:YOUR_DB_PASSWORD@aws-0-<region>.pooler.supabase.com:5432/postgres'
-D:\StockAche\backend\.venv\Scripts\python.exe D:\StockAche\backend\manage.py migrate
-```
+- **Site URL** → `https://stockache.netlify.app`
+- **Redirect URLs** → add `https://stockache.netlify.app/auth/callback`
+  (keep `http://localhost:5173/auth/callback` for local development)
 
-Create the admin account you will use to approve supplier verification:
+Without this, Google sign-in and email confirmation links fail or land on the
+wrong site.
 
-```powershell
-D:\StockAche\backend\.venv\Scripts\python.exe D:\StockAche\backend\manage.py createsuperuser
-```
+## Step 5 — Verify
 
-Optionally seed sample listings so the marketplace is not empty for judges:
-
-```powershell
-D:\StockAche\backend\.venv\Scripts\python.exe D:\StockAche\backend\manage.py seed_demo
-```
-
-Then clear the variable so local development returns to SQLite:
-
-```powershell
-Remove-Item Env:\DATABASE_URL
-```
-
-## Step 4 — Environment variables in Vercel
-
-**Project → Settings → Environment Variables.** Add every row to *Production*
-(and *Preview*, if you want preview deployments to work).
-
-| Name | Value | Notes |
-| --- | --- | --- |
-| `DJANGO_SECRET_KEY` | *generate one* | See command below. Never reuse the dev value. |
-| `DJANGO_DEBUG` | `False` | Non-negotiable in production. |
-| `DJANGO_ALLOWED_HOSTS` | `.vercel.app` | Leading dot matches every subdomain, including preview URLs. Add your custom domain here too. |
-| `DATABASE_URL` | transaction pooler string, port **6543** | From step 2. |
-| `SUPABASE_URL` | `https://uiblezlkmydzndoamvsk.supabase.co` | |
-| `SUPABASE_ANON_KEY` | your publishable key | Safe in the browser by design. |
-| `SUPABASE_SERVICE_KEY` | the **new** secret key | Server-side only. |
-| `SUPABASE_STORAGE_BUCKET` | `stocklot-images` | |
-| `PLATFORM_COMMISSION_RATE` | `0.02` | |
-| `PAYMENT_MODE` | `sandbox` | Until real bKash credentials exist. |
-| `ENABLE_DEV_LOGIN` | `False` | A deploy check fails the build if this is on with `DEBUG=False`. |
-| `VITE_SUPABASE_URL` | same as `SUPABASE_URL` | Needed at **build** time. |
-| `VITE_SUPABASE_ANON_KEY` | same as `SUPABASE_ANON_KEY` | Needed at **build** time. |
-| `VITE_API_BASE_URL` | `/api` | Same-origin, so no CORS. |
-
-Generate the secret key:
-
-```powershell
-D:\StockAche\backend\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(64))"
-```
-
-> `VITE_*` variables are compiled into the JavaScript bundle at build time, so
-> changing one requires a redeploy, not just a restart. Never put a secret
-> behind the `VITE_` prefix — it ships to every visitor.
-
-## Step 5 — Deploy
-
-Connect the GitHub repo at [vercel.com/new](https://vercel.com/new), pick
-`blackhashcode/StockAche`, and leave **Root Directory** as the repository root —
-`vercel.json` handles the rest. Do not set a framework preset; the explicit
-build command takes precedence.
-
-Or from the CLI:
-
-```bash
-npx vercel --prod
-```
-
-## Step 6 — Point Supabase Auth at the deployed domain
-
-Sign-in will fail until this is done: Supabase refuses to redirect to an
-unlisted URL and falls back to the Site URL instead.
-
-**Supabase → Authentication → URL Configuration**
-
-- **Site URL** → `https://<your-app>.vercel.app`
-- **Redirect URLs** → add `https://<your-app>.vercel.app/auth/callback`
-  (keep `http://localhost:5173/auth/callback` so local development still works)
-
-Google needs no change — its authorised redirect stays
-`https://uiblezlkmydzndoamvsk.supabase.co/auth/v1/callback`.
-
-## Step 7 — Verify the deployment
-
-```bash
-curl -s https://<your-app>.vercel.app/api/meta/
-```
-
-Expect JSON with `"commission_rate":"0.02"` and **`"dev_login_enabled":false`**.
-If that key is `true`, `ENABLE_DEV_LOGIN` was not set correctly.
-
-Then in the browser:
-
-1. Marketplace loads and shows listings.
-2. Register with email → confirmation mail arrives → the link returns you to the
-   app signed in.
+1. Marketplace loads and shows the listings.
+2. Register with email; the confirmation link brings you back signed in.
 3. Sign in with Google.
-4. Complete onboarding including the NID upload — this proves Supabase Storage
-   works from production.
-5. Place an order through the bKash sandbox flow.
-6. Sign in as a supplier and advance the order status.
+4. Upload an NID photo during onboarding — proves Storage works from production.
+5. Place an order with the bKash sandbox; advance it as the supplier.
+6. Sign in to `https://stockache-api.onrender.com/admin/` with your superuser.
 
 ---
 
-## Administering the live site
+## Things to know
 
-The Django admin is deliberately **not** exposed on Vercel. Serverless has no
-good way to serve its static files, and a public admin login on a prototype is
-an unnecessary attack surface. Run it locally against the production database
-instead:
+- **Free tier sleeps.** After 15 minutes without traffic Render stops the
+  service; the next request takes roughly 50 seconds. Open the site a minute
+  before a demo. The $7/month Starter plan stays awake.
+- **Migrations run on every deploy** (`migrate --noinput` in the build), so
+  new models go live with the push that adds them.
+- **Pushing to `main` redeploys both** Netlify and Render automatically.
+- **Disconnect the old Vercel project** (Vercel → Project → Settings →
+  Delete), or it keeps attempting a build on every push.
 
-```powershell
-$env:DATABASE_URL='postgresql://postgres.uiblezlkmydzndoamvsk:YOUR_DB_PASSWORD@aws-0-<region>.pooler.supabase.com:5432/postgres'
-$env:DJANGO_DEBUG='True'
-D:\StockAche\backend\.venv\Scripts\python.exe D:\StockAche\backend\manage.py runserver 8000
-```
+## Rotating exposed keys
 
-Open <http://localhost:8000/admin/> to approve supplier verification badges or
-resolve stuck cancellation requests. Close it and clear `DATABASE_URL` when done.
+The Supabase secret key and legacy `service_role` JWT pasted into chat during
+development were still accepted by Supabase as of 2026-10-04. A leaked
+service-role credential bypasses Row Level Security entirely.
 
-## Known limitations of this setup
-
-- **Cold starts.** An idle function takes roughly one to three seconds on the
-  first request. Clicking through the site once before a demo warms it.
-- **Migrations are manual.** Each schema change needs the step 3 command run
-  against Postgres before or right after the deploy.
-- **10-second function timeout** on the Hobby plan. Every current endpoint
-  responds well inside that; a real payment gateway callback may not.
-- **No background jobs.** Nothing in the app needs them today.
+**Supabase → Project Settings → API Keys**: revoke the secret key and create a
+new one, and disable the legacy JWT keys (revoking the new secret alone does
+not invalidate them). Then update `SUPABASE_SERVICE_KEY` in Render and in
+`backend/.env`.
 
 ## Troubleshooting
 
 | Symptom | Cause |
 | --- | --- |
-| `DisallowedHost` error | `DJANGO_ALLOWED_HOSTS` missing `.vercel.app` |
-| API returns 500, frontend loads | Check the function logs in Vercel → Deployments → Functions |
-| `FATAL: too many connections` | `DATABASE_URL` is using port 5432 instead of the 6543 pooler |
-| `could not translate host name ... No such host is known` | Using the Direct connection string, which is IPv6-only. Switch to a pooler string. |
-| Sign-in redirects to a blank page or `localhost` | Step 6 not done |
-| Refreshing `/marketplace` gives 404 | `vercel.json` SPA rewrite missing or Root Directory set wrong |
-| Images fail to upload | `SUPABASE_SERVICE_KEY` wrong, or the old key was revoked without updating Vercel |
-| Build fails on `pip install` | Root `requirements.txt` missing or Root Directory not the repo root |
+| Render build fails at `pip install` | Check the Python version line in the log; `render.yaml` pins 3.12.7 |
+| `could not translate host name` | `DATABASE_URL` is the Direct connection string; use the Session pooler |
+| `password authentication failed for user "postgres"` | Wrong database password (not your Supabase login). Reset it under Settings → Database. The message names `postgres` even when your username is right. |
+| Site loads, but every API call fails | `CORS_ALLOWED_ORIGINS` on Render doesn't match the Netlify URL exactly, or `VITE_API_BASE_URL` is missing `/api` |
+| Refreshing `/marketplace` gives 404 | `netlify.toml` not picked up — check the base directory is unset in the Netlify UI |
+| Sign-in returns to a blank page or localhost | Step 4 not done |
+| `/admin/` has no styling | `collectstatic` didn't run — check the Render build log |
+| First request very slow | Free-tier cold start; expected |
