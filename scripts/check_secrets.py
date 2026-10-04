@@ -165,7 +165,7 @@ SELF_TESTS = [
      True, "supabase secret key format"),
     ("GOOGLE_SECRET=GOCSPX-abcdefghijklmnop",
      True, "real google oauth secret"),
-    ("SUPABASE_ANON_KEY=sb_publishable_wQE8nSgKuMdlu6YH1pKmdA",
+    ("SUPABASE_ANON_KEY=sb_publishable_F4kE0nLyExAmPlEk3y",
      False, "publishable key is safe in the browser"),
 ]
 

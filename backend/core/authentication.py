@@ -146,7 +146,7 @@ class SupabaseAuthentication(authentication.BaseAuthentication):
             return None
         token = parts[1]
 
-        # Prototype-only escape hatch used by /api/auth/dev-login/.
+        # Local-development escape hatch used by /api/auth/dev-login/ (ENABLE_DEV_LOGIN).
         if token.startswith(DEV_TOKEN_PREFIX):
             if not settings.ENABLE_DEV_LOGIN:
                 raise exceptions.AuthenticationFailed("Dev login is disabled.")

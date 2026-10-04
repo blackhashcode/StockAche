@@ -180,7 +180,7 @@ def select_role(request):
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def dev_login(request):
-    """Prototype-only: hand back a token for a seeded demo account.
+    """Local development only: hand back a token for a seeded demo account.
 
     Gated on ENABLE_DEV_LOGIN so it disappears outside local development. Lets
     the app be demoed even if Google OAuth is misconfigured on the day.
@@ -904,11 +904,16 @@ def buyer_dashboard(request):
 # -------------------------------------------------------------------- uploads
 
 
+#: Storage folders the frontend writes to. The folder comes from the client,
+#: so it is checked against this list rather than used as a path directly.
+UPLOAD_FOLDERS = {"listings", "documents"}
+
+
 class UploadView(APIView):
     """Proxy an image upload into Supabase Storage.
 
-    Going through the server means the demo does not depend on Storage RLS
-    policies being set up correctly in the dashboard.
+    Going through the server keeps the service key off the browser, and means
+    uploads do not depend on Storage RLS policies set up in the dashboard.
     """
 
     permission_classes = [IsAuthenticated]
@@ -922,6 +927,8 @@ class UploadView(APIView):
         if not (file_obj.content_type or "").startswith("image/"):
             raise ValidationError({"file": "Only image files are accepted."})
 
-        folder = request.data.get("folder", "listings")
-        url = upload_to_supabase(file_obj, folder=str(folder))
+        folder = str(request.data.get("folder", "listings"))
+        if folder not in UPLOAD_FOLDERS:
+            raise ValidationError({"folder": "Unknown upload folder."})
+        url = upload_to_supabase(file_obj, folder=folder)
         return Response({"url": url}, status=status.HTTP_201_CREATED)
