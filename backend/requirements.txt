@@ -5,7 +5,4 @@ django-filter==24.3
 python-dotenv==1.0.1
 PyJWT==2.10.1
 requests==2.32.3
-# 2.9.10 ships no cp314 wheel, so a builder defaulting to Python 3.14 falls back
-# to compiling from source and fails for want of pg_config. 2.9.13 covers
-# 3.10 - 3.14.
-psycopg2-binary==2.9.13
+psycopg2-binary==2.9.10
