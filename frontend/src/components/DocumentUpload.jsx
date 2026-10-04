@@ -8,8 +8,9 @@ import { cx } from './ui'
 /**
  * Single-document uploader for identity papers (NID, trade licence).
  *
- * Uploads into the private `documents` folder rather than the listing folder,
- * so these never appear anywhere near the public marketplace feed.
+ * Uploads into a separate `documents` folder, under a random unguessable
+ * name, and the URL is only ever returned to the owner and the admin. The
+ * storage bucket itself is public, so the URL is what protects the file.
  */
 export default function DocumentUpload({
   value,

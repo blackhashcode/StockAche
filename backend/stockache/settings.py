@@ -1,4 +1,4 @@
-"""Django settings for the StockAche prototype."""
+"""Django settings for StockAche."""
 
 from decimal import Decimal
 from pathlib import Path
@@ -25,7 +25,7 @@ def env_list(key: str, default: str = "") -> list[str]:
     return [item.strip() for item in env(key, default).split(",") if item.strip()]
 
 
-SECRET_KEY = env("DJANGO_SECRET_KEY", "insecure-prototype-key")
+SECRET_KEY = env("DJANGO_SECRET_KEY", "insecure-dev-key")
 DEBUG = env_bool("DJANGO_DEBUG", True)
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 
@@ -83,7 +83,7 @@ WSGI_APPLICATION = "stockache.wsgi.application"
 
 
 # --- Database -----------------------------------------------------------
-# Default is SQLite so the prototype runs with zero setup. Setting DATABASE_URL
+# Default is SQLite so local development needs zero setup. Setting DATABASE_URL
 # to a Supabase Postgres connection string switches the whole app over with no
 # code changes.
 DATABASE_URL = env("DATABASE_URL")

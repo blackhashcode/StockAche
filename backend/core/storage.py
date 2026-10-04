@@ -1,7 +1,7 @@
 """Supabase Storage helper.
 
 Uploads go out with the service key, so the bucket does not need permissive
-Row Level Security policies for the prototype to work.
+Row Level Security policies on the storage bucket.
 """
 
 import logging

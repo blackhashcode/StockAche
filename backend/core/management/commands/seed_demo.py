@@ -1,4 +1,4 @@
-"""Populate the prototype with believable Bangladeshi stocklot data.
+"""Populate a local database with believable Bangladeshi stocklot data.
 
     python manage.py seed_demo          # add demo data, keep what exists
     python manage.py seed_demo --reset  # wipe marketplace data first
@@ -272,7 +272,7 @@ DELIVERY_OPTIONS = [
 
 
 class Command(BaseCommand):
-    help = "Seed the StockAche prototype with demo suppliers, buyers, lots and orders."
+    help = "Seed StockAche with demo suppliers, buyers, lots and orders."
 
     def add_arguments(self, parser):
         parser.add_argument(
