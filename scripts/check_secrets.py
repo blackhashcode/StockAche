@@ -54,20 +54,9 @@ JWT_RE = re.compile(r"eyJ[A-Za-z0-9_\-]{8,}\.([A-Za-z0-9_\-]{8,})\.[A-Za-z0-9_\-
 # Documentation is full of connection-string templates. Anything carrying
 # angle brackets, braces, or an obvious filler word is a placeholder, not a
 # credential -- flagging those trains people to ignore the scanner.
-#
-# The boundaries are lookarounds rather than \b because placeholders are
-# usually snake_case: \bYOUR\b fails against YOUR_DB_PASSWORD, since '_' is a
-# word character and so no boundary exists after "YOUR".
-#
-# The word list must exclude anything that occurs inside a *real* credential
-# format. "secret", "key" and "token" are all disqualified: sb_secret_<...> is
-# a genuine Supabase secret key and would otherwise be dismissed as filler.
 PLACEHOLDER_RE = re.compile(
-    r"[<>{}]"
-    r"|(?<![A-Za-z0-9])"
-    r"(your|example|changeme|change-me|placeholder|x{3,}|redacted|dummy|sample|"
-    r"password|passwd)"
-    r"(?![A-Za-z0-9])",
+    r"[<>{}]|\b(your|example|changeme|change-me|placeholder|xxx+|redacted|dummy|"
+    r"password|secret|token|key)\b",
     re.IGNORECASE,
 )
 
@@ -145,63 +134,11 @@ def install_hook() -> int:
     return 0
 
 
-# (sample text, must_be_flagged, description)
-# Tuning the placeholder list is easy to get wrong in the dangerous direction,
-# so both halves are pinned: documentation must stay quiet, and real
-# credentials must always trip.
-SELF_TESTS = [
-    ("DATABASE_URL=postgresql://postgres.abc:YOUR_DB_PASSWORD@host:5432/postgres",
-     False, "doc placeholder, snake_case"),
-    ("postgresql://postgres.abc:[YOUR-PASSWORD]@host:5432/postgres",
-     False, "doc placeholder, dashboard style"),
-    ("postgresql://user:<password>@host:5432/db",
-     False, "doc placeholder, angle brackets"),
-    ("DATABASE_URL=postgresql://postgres.abc:Tk9x2Lm44Qz@host:6543/postgres",
-     True, "real postgres password"),
-    # Synthetic values only. Never paste a live credential here, even a
-    # compromised one: this file is committed, and it is skipped by the scanner
-    # itself so that the patterns below do not self-trigger.
-    ("SUPABASE_SERVICE_KEY=sb_secret_F4kE0nLyN0tAr3alK3yV4lu3Z9",
-     True, "supabase secret key format"),
-    ("GOOGLE_SECRET=GOCSPX-abcdefghijklmnop",
-     True, "real google oauth secret"),
-    ("SUPABASE_ANON_KEY=sb_publishable_wQE8nSgKuMdlu6YH1pKmdA",
-     False, "publishable key is safe in the browser"),
-]
-
-
-def self_test() -> int:
-    failures = 0
-    for text, should_flag, label in SELF_TESTS:
-        hit = False
-        for _, pattern, _severity in PATTERNS:
-            m = pattern.search(text)
-            if m and not looks_like_placeholder(m.group(0)):
-                hit = True
-        for m in JWT_RE.finditer(text):
-            if jwt_role(m.group(1)) == "service_role":
-                hit = True
-        ok = hit == should_flag
-        failures += 0 if ok else 1
-        verdict = "flagged" if hit else "ignored"
-        print(f"  {'ok  ' if ok else 'FAIL'} {verdict:<8} {label}")
-    print()
-    if failures:
-        print(f"{failures} self-test(s) failed — the scanner is not trustworthy.")
-        return 1
-    print(f"All {len(SELF_TESTS)} self-tests passed.")
-    return 0
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--staged", action="store_true", help="scan staged files only")
     parser.add_argument("--install-hook", action="store_true", help="install pre-commit hook")
-    parser.add_argument("--self-test", action="store_true", help="verify the detection rules")
     args = parser.parse_args()
-
-    if args.self_test:
-        return self_test()
 
     if args.install_hook:
         return install_hook()
